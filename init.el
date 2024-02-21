@@ -406,7 +406,7 @@
   ;; https://www.reddit.com/r/emacs/comments/zs0ie5/comment/j17vrgk/?utm_source=share&utm_medium=web2x&context=3
   (defun my/cape-capf-setup-lsp ()
     (setq-local completion-at-point-functions
-		(list (cape-super-capf
+		(list (cape-capf-super
                        (cape-capf-buster #'lsp-completion-at-point)
                        #'cape-dabbrev
                        ;; (cape-company-to-capf #'company-yasnippet)
