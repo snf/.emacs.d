@@ -102,6 +102,24 @@
   ;;     (if override
   ;; 	  (cons 'transient override)
   ;; 	nil)))
+
+  ;; Add magit-clone to projects
+  ;; TODO
+  ;; (advice-add 'magit-clone :around
+  ;;             (lambda (magit-clone-fun &rest args)
+  ;;               (apply magit-clone-fun args)
+  ;;               (let ((project-dir (nth 0 args)))
+  ;;                 (project-remember-project project-dir)
+  ;;                 )))
+
+
+  ;; (advice-add 'magit-clone-internal :around
+  ;;             (lambda (magit-clone-fun &rest args)
+  ;;               (apply magit-clone-fun args)
+  ;;               (let ((project-dir (nth 1 args)))
+  ;;                 (project-remember-project project-dir)
+  ;;                 )))
+
   (add-to-list 'project-find-functions #'my/project-find-root)
   )
 
@@ -619,6 +637,7 @@ shell exits, the buffer is killed."
   (sp-pair "(" ")" :unless '(sp-point-before-word-p))
   (sp-pair "[" "]" :unless '(sp-point-before-word-p))
   (sp-local-pair '(emacs-lisp-mode rust-mode) "'" "'" :actions nil)
+  (sp-local-pair '(emacs-lisp-mode rust-ts-mode) "'" "'" :actions nil)
   :init
   (smartparens-global-mode t)
   )
@@ -642,11 +661,14 @@ shell exits, the buffer is killed."
 (use-package lsp-mode
   :config
   (define-key lsp-mode-map (kbd "C-c C-l") lsp-command-map)
+  (add-to-list 'lsp-file-watch-ignored-files "[/\\\\][123].+\\'")
+  (add-to-list 'lsp-file-watch-ignored-files "[/\\\\]perf.+\\'")
   :custom
   (lsp-completion-provider :none)
   (lsp-keep-workspace-alive nil)
   (lsp-use-plists t)
   (lsp-signature-render-documentation nil)
+  ;; (lsp-keymap-prefix "C-c C-l")
   ;; (lsp-rust-analyzer-server-display-inlay-hints t)
   ;; :init
   ;; (setq lsp-completion-provider :none)
@@ -730,11 +752,6 @@ shell exits, the buffer is killed."
   :custom
   (py-split-window-on-execute nil)
   )
-(use-package python-mls
-  ;; :custom
-  ;; (python-mls-multiline-history-modifier '(meta shift))
-  :hook
-  (inferior-python-mode . python-mls-mode))
 (use-package pyvenv
   :after python-mode
   :diminish
@@ -767,7 +784,12 @@ shell exits, the buffer is killed."
 ;;   (rustic-lsp-client 'lsp-mode)
 ;;   )
 (use-package rust-mode
-  :hook (rust-mode . lsp)
+  :straight (:host github :repo "rust-lang/rust-mode")
+  :hook
+  (rust-mode . lsp)
+  (rust-ts-mode . lsp)
+  :custom
+  (rust-mode-treesitter-derive t)
   :init
   (setenv "CARGO_TARGET_DIR" "/tmp/cargo_build")
   )
@@ -782,11 +804,13 @@ shell exits, the buffer is killed."
      (make-lsp-client
       ;; :new-connection (lsp-stdio-connection '("solc" "--lsp"))
       :new-connection (lsp-stdio-connection '("nomicfoundation-solidity-language-server" "--stdio"))
+      ;; :new-connection (lsp-stdio-connection '("vscode-solidity-server" "--stdio"))
       :activation-fn (lsp-activate-on "solidity")
       :priority -1
-      :server-id 'solc-lsp))
+      :server-id 'nomic-solidity-lsp))
     )
   )
+(setq lsp-log-io nil)
 (use-package souffle-mode
   :straight (souffle-mode :type git :host github :repo "gbalats/souffle-mode")
   :custom (souffle-indent-width 2)
@@ -835,6 +859,7 @@ shell exits, the buffer is killed."
 
 ;; tools
 ;; ai
+(load-file "~/.emacs.d/secret.el")
 (use-package chatgpt-shell
   :straight (chatgpt-shell :type git :host github :repo "xenodium/chatgpt-shell")
   :custom
@@ -948,6 +973,9 @@ With argument ARG, do this that many times."
 
 ;; Disable annoying keys
 (global-unset-key (kbd "C-z"))
+
+;; Find file at point
+(global-set-key (kbd "C-c C-o") 'ffap)
 
 (defun display-number-at-point ()
   (interactive)
