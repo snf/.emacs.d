@@ -39,11 +39,8 @@
 (setq custom-file "~/.emacs.d/custom.el")
 (load custom-file t)
 
-(setq secrets-file "~/.emacs.d/secret.el")
-(load secrets-file t)
-
 ;; Install straight.el
-(setq straight-repository-branch "develop") ;; So it works with the latest Emacs branch
+(setq straight-repository-branch "develop")
 (defvar bootstrap-version)
 (let ((bootstrap-file
        (expand-file-name "straight/repos/straight.el/bootstrap.el" user-emacs-directory))
@@ -792,6 +789,7 @@ shell exits, the buffer is killed."
   (rust-mode-treesitter-derive t)
   :init
   (setenv "CARGO_TARGET_DIR" "/tmp/cargo_build")
+  (setenv "CARGO_TARGET_DIR" "true")
   )
 
 (use-package solidity-mode
@@ -862,8 +860,14 @@ shell exits, the buffer is killed."
 (load-file "~/.emacs.d/secret.el")
 (use-package chatgpt-shell
   :straight (chatgpt-shell :type git :host github :repo "xenodium/chatgpt-shell")
-  :custom
-  (chatgpt-shell-model-version 5)
+  :config
+  (push '("Chemistry" . "The user is a professional chemist with very limited time.
+                        You treat their time as precious. You do not repeat obvious things, including their query.
+                        You are as concise as possible in responses.
+                        If you don't know the answer, say I don't know.
+                        You never apologize for confusions because it would waste their time.
+                        You use markdown liberally to structure responses.")
+	chatgpt-shell-system-prompts)
   )
 
 ;; notifications
