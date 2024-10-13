@@ -68,7 +68,7 @@
               ("m" . magit-project-status)
               )
   :custom
-  (vc-directory-exclusion-list '("node_modules" "memoizeFs_cache" "contract_graphs"))
+  (vc-directory-exclusion-list '("node_modules" "memoizeFs_cache" "contract_graphs" ".git" "target"))
   :config
   (add-to-list 'project-switch-commands '(magit-project-status "Magit") t)
   (add-to-list 'project-switch-commands '(project-switch-to-buffer "Buffer") t)
