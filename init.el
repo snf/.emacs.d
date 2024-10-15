@@ -791,7 +791,6 @@ shell exits, the buffer is killed."
   (rust-mode-treesitter-derive t)
   :init
   (setenv "CARGO_TARGET_DIR" "/tmp/cargo_build")
-  (setenv "CARGO_TARGET_DIR" "true")
   )
 
 (use-package solidity-mode
