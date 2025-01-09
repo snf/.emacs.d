@@ -981,6 +981,27 @@ results."
   ;; Optional: Set a key binding for the transient menu
   (global-set-key (kbd "C-c a") 'aider-transient-menu))
 
+
+(use-package copilot
+  ;; :after company-mode
+  :straight (:host github :repo "copilot-emacs/copilot.el" :files ("dist" "*.el"))
+  ;; :config
+  ;; (defun company-copilot-tab ()
+  ;;   (interactive)
+  ;;   (or (copilot-accept-completion)
+  ;;       (company-indent-or-complete-common nil)))
+
+  ;;       				; modify company-mode behaviors
+  ;; (with-eval-after-load 'company
+  ;;       				; disable inline previews
+  ;;   (delq 'company-preview-if-just-one-frontend company-frontends)
+  ;;       				; enable tab completion
+  ;;   (define-key company-mode-map (kbd "<tab>") 'company-copilot-tab)
+  ;;   (define-key company-mode-map (kbd "TAB") 'company-copilot-tab)
+  ;;   (define-key company-active-map (kbd "<tab>") 'company-copilot-tab)
+  ;;   (define-key company-active-map (kbd "TAB") 'company-copilot-tab))
+  )
+
 ;; notifications
 (use-package alert
   :config
@@ -1017,26 +1038,7 @@ results."
   :init
   (dtrt-indent-global-mode)
   )
-;; https://github.com/zerolfx/copilot.el
-;; (use-package copilot
-;;   :after company-mode
-;;   :straight (:host github :repo "zerolfx/copilot.el" :files ("dist" "*.el"))
-;;   :config
-;;   (defun company-copilot-tab ()
-;;     (interactive)
-;;     (or (copilot-accept-completion)
-;; 	(company-indent-or-complete-common nil)))
 
-;; 					; modify company-mode behaviors
-;;   (with-eval-after-load 'company
-;; 					; disable inline previews
-;;     (delq 'company-preview-if-just-one-frontend company-frontends)
-;; 					; enable tab completion
-;;     (define-key company-mode-map (kbd "<tab>") 'company-copilot-tab)
-;;     (define-key company-mode-map (kbd "TAB") 'company-copilot-tab)
-;;     (define-key company-active-map (kbd "<tab>") 'company-copilot-tab)
-;;     (define-key company-active-map (kbd "TAB") 'company-copilot-tab))
-;;   )
 (use-package doom-modeline
   :init (doom-modeline-mode 1))
 (use-package doom-themes
