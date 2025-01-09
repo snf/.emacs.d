@@ -884,6 +884,7 @@ results."
   (rust-mode-treesitter-derive t)
   :init
   (setenv "CARGO_TARGET_DIR" "/tmp/cargo_build")
+  (add-to-list 'auto-mode-alist '("\\.rs\\'" . rust-ts-mode))
   )
 
 (use-package solidity-mode
