@@ -744,9 +744,53 @@
   "\\.dockerfile\\'"
   "\\dockerfile\\'"
   )
+
 (use-package go-mode
   :hook (go-mode . lsp-deferred)
   )
+
+(defun my-go-lint ()
+  "Run golangci-lint.
+It is 1 umbrella command that runs many other linters and combines their
+results."
+  (interactive)
+  ;; shadow `compile-command'. it will automatically rollback to the original
+  ;; value without corruption.
+  (let* ((compile-command "golangci-lint run")
+         ;;(compile-command "golangci-lint run -E gosec")
+         ;;(compile-command "golangci-lint run --enable-all")
+         ;;(compile-command "golangci-lint run --fix")
+
+         (default-directory (project-root buffer-file-name))
+         ;; (root-obj (project-current nil))
+         ;; (root-folder (if (not (null root-obj))
+         ;;                  ;; extract folder field out of obj.
+         ;;                  (project-root root-obj)
+         ;;                ;; else get root folder manually from user
+         ;;                (read-directory-name "proj root: " nil nil t)))
+
+         ;; `compile' uses `default-directory'.
+         ;; (default-directory (my-select-folder))
+         )
+    (call-interactively #'compile)))
+
+(use-package flycheck-golangci-lint
+  ;; Not needed separately as handled by https://github.com/nametake/golangci-lint-langserver
+  :disabled t
+  :hook ((go-mode go-ts-mode) . +go-setup-checkers)
+  :config
+  ;; (add-to-list 'flycheck-checker-max-level '(golangci-lint . warning))
+  (setq flycheck-golangci-lint-enable-linters
+        '("bodyclose" "depguard" "dupl" "errcheck" "exhaustive" "funlen" "gochecknoinits" "goconst"
+          "gocritic" "gocognit" "gofmt" "goimports" "revive" "gosec" "gosimple" "govet" "ineffassign" "lll"
+          "misspell" "noctx" "rowserrcheck" "staticcheck" "typecheck" "unparam" "unused"
+          "whitespace" "gomodguard" "sqlclosecheck" "errcheck"))
+
+  (defun +go-setup-checkers()
+    (flycheck-golangci-lint-setup)
+    ;; Demote golangci errors to warning
+    (setq-local flycheck-local-checkers-chain '((lsp . golangci-lint)))))
+
 (use-package groovy-mode
   :mode
   "\\.groovy\\'"
