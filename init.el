@@ -987,7 +987,7 @@ results."
   ;; :after company-mode
   :straight (:host github :repo "copilot-emacs/copilot.el" :files ("dist" "*.el"))
   :bind (:map copilot-mode-map
-              ("C-i" . copilot-accept-completion)
+              ("C-p" . copilot-accept-completion)
               ("M-<right>" . copilot-next-completion)
               ("M-<left>" . copilot-previous-completion)
               ;; ("s-w" . copilot-accept-completion-by-word)
