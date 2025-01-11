@@ -879,12 +879,13 @@ results."
   :straight (:host github :repo "rust-lang/rust-mode")
   :hook
   (rust-mode . lsp)
-  (rust-ts-mode . lsp)
+  ;; (rust-ts-mode . lsp)
   :custom
   (rust-mode-treesitter-derive t)
   :init
+  (setq rust-indent-offset 4)
   (setenv "CARGO_TARGET_DIR" "/tmp/cargo_build")
-  (add-to-list 'auto-mode-alist '("\\.rs\\'" . rust-ts-mode))
+  ;; (add-to-list 'auto-mode-alist '("\\.rs\\'" . rust-ts-mode))
   )
 
 (use-package solidity-mode
@@ -994,7 +995,7 @@ results."
               )
   :hook
   (rust-mode . copilot-mode)
-  (rust-ts-mode . copilot-mode)
+  ;; (rust-ts-mode . copilot-mode)
   ;; :config
   ;; (defun company-copilot-tab ()
   ;;   (interactive)
