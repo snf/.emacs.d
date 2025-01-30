@@ -36,6 +36,12 @@
       '(("." . "~/.emacs.d/backups/"))
       )
 
+;; (with-eval-after-load 'tramp
+;;   (add-to-list 'tramp-remote-process-environment "BASH_ENV=~/.bashrc"))
+(require 'tramp)
+(add-to-list 'tramp-remote-path 'tramp-own-remote-path)
+(add-to-list 'tramp-remote-process-environment "BASH_ENV=~/.bashrc")
+
 (setq custom-file "~/.emacs.d/custom.el")
 (load custom-file t)
 
