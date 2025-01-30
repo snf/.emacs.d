@@ -904,7 +904,7 @@ results."
       :server-id 'nomic-solidity-lsp))
     )
   )
-(setq lsp-log-io nil)
+
 (use-package souffle-mode
   :straight (souffle-mode :type git :host github :repo "gbalats/souffle-mode")
   :custom (souffle-indent-width 2)
