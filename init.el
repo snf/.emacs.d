@@ -1174,6 +1174,38 @@ See `find-name-arg' to customize the arguments."
 (put 'downcase-region 'disabled nil)
 (delete-selection-mode)
 
+;; (defun my/reuse-error-buffer ()
+;;   "Ensure errors are shown in the same buffer without jumping to it."
+;;   (let ((win (get-buffer-window (next-error-find-buffer t))))
+;;     (when win
+;;       (with-selected-window win
+;;         (goto-char (point))))))
+
+;; (defun my/reuse-error-buffer ()
+;;   "Ensure errors are displayed in the same buffer without selecting or jumping."
+;;   (let ((buffer (next-error-find-buffer t)))
+;;     (when buffer
+;;       (with-current-buffer buffer
+;;         (goto-char (point))))))
+
+;; (defun my/reuse-error-buffer ()
+;;   "Ensure errors are shown in the same buffer."
+;;   (let ((win (display-buffer (next-error-find-buffer t))))
+;;     (when win
+;;       (select-window win))))
+
+;; (defun previous-error-no-select (&optional arg)
+;;   "Move to previous error and show it in reused buffer without selecting."
+;;   (interactive "p")
+;;   (previous-error arg)
+;;   (my/reuse-error-buffer))
+
+;; (defun next-error-no-select (&optional arg)
+;;   "Move to next error and show it in reused buffer without selecting."
+;;   (interactive "p")
+;;   (next-error arg)
+;;   (my/reuse-error-buffer))
+
 ;; Apparently Emacs moves the file to back it up and then copies it back to the original, this changes that
 (setq backup-by-copying t)
 
