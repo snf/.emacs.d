@@ -970,23 +970,59 @@ results."
                         You never apologize for confusions because it would waste their time.
                         You use markdown liberally to structure responses.")
 	chatgpt-shell-system-prompts)
+
+
+  (push (chatgpt-shell-openrouter-make-model
+                   :version "deepseek/deepseek-r1:free"
+                   :short-version "deepseek-r1:free"
+                   :label "DeepSeekR1:Free"
+                   :context-window 128000
+                   :token-width 16
+                   )
+        chatgpt-shell-models)
+
+  ;; (advice-add 'chatgpt-shell-openrouter-models :filter-return
+  ;;             #'chatgpt-shell-openrouter-add-models)
+
+  ;; (defun chatgpt-shell-openrouter-add-models (models)
+  ;;   (append models
+  ;;           (list (chatgpt-shell-openrouter-make-model
+  ;;                  :version "deepseek/deepseek-r1:free"
+  ;;                  :short-version "deepseek-r1:free"
+  ;;                  :label "DeepSeekR1:Free"
+  ;;                  :context-window 128000
+  ;;                  ))))
+
+  ;; (advice-add 'chatgpt-shell-openrouter-models :filter-return
+  ;;             #'chatgpt-shell-openrouter-add-models)
   )
 
-(use-package aider
-  :straight (:host github :repo "tninja/aider.el" :files ("aider.el"))
+;; (use-package aider
+;;   :straight (:host github :repo "tninja/aider.el" :files ("aider.el"))
+;;   :config
+;;   ;; Use claude-3-5-sonnet cause it is best in aider benchmark
+;;   ;; (setq aider-args '("--model" "anthropic/claude-3-5-sonnet-20241022"))
+;;   ;; (setenv "ANTHROPIC_API_KEY" anthropic-api-key)
+;;   ;; Or use chatgpt model since it is most well known
+;;   (setq aider-args '("--model" "gpt-4o-mini"))
+;;   (setenv "OPENAI_API_KEY" chatgpt-shell-openai-key)
+;;   (setenv "OPENROUTER_API_KEY" chatgpt-shell-openrouter-key)
+;;   ;; Or use gemini v2 model since it is very good and free
+;;   ;; (setq aider-args '("--model" "gemini/gemini-exp-1206"))
+;;   ;; (setenv "GEMINI_API_KEY" <your-gemini-api-key>)
+;;   ;; ;;
+;;   ;; Optional: Set a key binding for the transient menu
+;;   (global-set-key (kbd "C-c a") 'aider-transient-menu))
+
+(use-package aidermacs
+  :straight (:host github :repo "MatthewZMD/aidermacs" :files ("*.el"))
   :config
-  ;; Use claude-3-5-sonnet cause it is best in aider benchmark
-  ;; (setq aider-args '("--model" "anthropic/claude-3-5-sonnet-20241022"))
-  ;; (setenv "ANTHROPIC_API_KEY" anthropic-api-key)
-  ;; Or use chatgpt model since it is most well known
-  (setq aider-args '("--model" "gpt-4o-mini"))
+  ;; (setq aidermacs-args '("--model" "anthropic/claude-3-5-sonnet-20241022"))
+  (setq aidermacs-args '("--model" "openrouter/anthropic/claude-3.5-sonnet"))
+  ;; (setq aidermacs-args '("--model" "gpt-4o-mini"))
   (setenv "OPENAI_API_KEY" chatgpt-shell-openai-key)
-  ;; Or use gemini v2 model since it is very good and free
-  ;; (setq aider-args '("--model" "gemini/gemini-exp-1206"))
-  ;; (setenv "GEMINI_API_KEY" <your-gemini-api-key>)
-  ;; ;;
-  ;; Optional: Set a key binding for the transient menu
-  (global-set-key (kbd "C-c a") 'aider-transient-menu))
+  (setenv "OPENROUTER_API_KEY" chatgpt-shell-openrouter-key)
+  (global-set-key (kbd "C-c a") 'aidermacs-transient-menu))
 
 
 (use-package copilot
