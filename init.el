@@ -1028,6 +1028,21 @@ results."
   (setenv "OPENROUTER_API_KEY" chatgpt-shell-openrouter-key)
   (global-set-key (kbd "C-c a") 'aidermacs-transient-menu))
 
+(use-package whisper
+  :straight (:host github :repo "natrys/whisper.el" :files ("*.el"))
+  :bind ("C-c w" . whisper-run)
+  :config
+  (setq whisper-install-directory "/tmp/"
+        whisper--ffmpeg-input-format "alsa"
+        whisper--ffmpeg-input-device "hw:1"
+        ;; whisper-install-directory "~/.emacs.d/whisper/"
+        whisper-model "base"
+        ;; whisper-model "medium"
+        ;; whisper-language "en"
+        whisper-language "es"
+        ;; whisper-translate nil
+        whisper-translate t
+        whisper-use-threads (/ (num-processors) 4)))
 
 (use-package copilot
   ;; :after company-mode
