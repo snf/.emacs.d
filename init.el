@@ -932,9 +932,12 @@ results."
   (terraform-indent-level 4)
   )
 (use-package typescript-mode
+  :hook
+  (typescript-mode . lsp)
   :custom
   (js-indent-level 2)
   )
+
 (use-package web-mode
   :mode
   "\\.html?\\'"
