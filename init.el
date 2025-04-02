@@ -1022,7 +1022,7 @@ results."
   :config
   ;; (setq aidermacs-args '("--model" "anthropic/claude-3-5-sonnet-20241022"))
   ;; (setq aidermacs-args '("--model" "openrouter/anthropic/claude-3.5-sonnet"))
-  (setq aidermacs-args '("aider --architect --model openrouter/deepseek/deepseek-r1 --editor-model openrouter/anthropic/claude-3.5-sonnet --line-endings crlf"))
+  (setq aidermacs-args '("aider --architect --model openrouter/deepseek/deepseek-r1 --editor-model openrouter/anthropic/claude-3.5-sonnet --no-gitignore --line-endings crlf"))
   ;; (setq aidermacs-args '("--model" "gpt-4o-mini"))
   (setenv "OPENAI_API_KEY" chatgpt-shell-openai-key)
   (setenv "OPENROUTER_API_KEY" chatgpt-shell-openrouter-key)
