@@ -1042,7 +1042,27 @@ results."
         whisper-language "es"
         ;; whisper-translate nil
         whisper-translate t
-        whisper-use-threads (/ (num-processors) 4)))
+        whisper-use-threads (/ (num-processors) 4))
+
+  (defun my/whisper-display-in-buffer (text)
+    "Display Whisper transcription in a dedicated buffer."
+    (let ((buf (get-buffer-create "*Whisper Transcription*")))
+      (with-current-buffer buf
+        (erase-buffer)
+        (insert text)
+        (view-mode 1))
+      (display-buffer buf)))
+
+  (defun my/whisper-record-to-buffer ()
+    "Start background recording with whisper.el and show result in buffer."
+    (interactive)
+    (let ((orig-hook whisper-after-transcription-hook))
+      (add-hook 'whisper-after-transcription-hook
+                (lambda ()
+                  (when-let (text (buffer-string))
+                    (my/whisper-display-in-buffer text)
+                    (remove-hook 'whisper-after-transcription-hook this-hook))))
+      (whisper-run))))
 
 (use-package copilot
   ;; :after company-mode
