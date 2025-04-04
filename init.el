@@ -938,6 +938,11 @@ results."
   (js-indent-level 2)
   )
 
+(use-package prettier
+  :init
+  (global-prettier-mode)
+)
+
 (use-package web-mode
   :mode
   "\\.html?\\'"
