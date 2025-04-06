@@ -980,10 +980,10 @@ results."
         '("Technical Blogpost" . "Given a draft blog post targeted at developers, your task is to editorialize and improve it by following these guidelines. Before executing changes, allow room for clarifications on any doubts or questions:
 
 1. Establish Credibility:
-   - Ensure the introduction quickly establishes the author’s expertise and experience. Integrate any achievements or notable metrics but maintain a balanced tone to avoid sounding overly boastful.
+   - Ensure the introduction quickly establishes the author’s expertise and experience. Integrate any achievements or notable metrics but maintain a balanced tone to avoid sounding overly boastful. 
 
 2. Make the Point Quickly:
-   - Review the introduction to ensure it captures the main idea swiftly and addresses why the reader should care. Verify the first three sentences clearly indicate the target audience and the benefits they’ll gain from reading.
+   - Apply the inverted pyramid format by placing critical information at the beginning. Ensure the first sentence addresses the who, what, when, where, and why to facilitate skimming. Review the introduction to ensure it captures the main idea swiftly and addresses why the reader should care. Verify the first three sentences clearly indicate the target audience and the benefits they’ll gain from reading.
 
 3. Broaden Audience Appropriately:
    - Identify opportunities to expand the potential readership without diluting technical content. Simplify jargon as needed and consider whether minor adjustments could make the content accessible to a broader audience.
@@ -992,7 +992,7 @@ results."
    - Highlight pathways for reaching the target audience effectively. Evaluate potential keywords, platforms, and strategies that could be mentioned to ensure readers have a practical understanding of how to disseminate their content.
 
 5. Enhance Visual Engagement:
-   - Suggest or incorporate diagrams, screenshots, or other visual elements that complement and break up large blocks of text. Recommend cost-effective resources for creating or sourcing visuals.
+   - Suggest diagrams, screenshots, or other visual elements that complement and break up large blocks of text. Recommend cost-effective resources for creating or sourcing visuals.
 
 6. Accommodate Skimmers:
    - Ensure the structure supports skimming by refining headings and subheadings. Check if the text flow includes bulleted lists, concise paragraphs, and key takeaways that are easy to digest at a glance.
