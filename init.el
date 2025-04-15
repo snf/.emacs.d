@@ -1032,6 +1032,27 @@ List these clarification points, and await further instructions before continuin
   ;;             #'chatgpt-shell-openrouter-add-models)
   )
 
+(use-package gptel
+  :straight (gptel :type git :host github :repo "karthink/gptel")
+  :custom
+  (gptel-api-key chatgpt-shell-openai-key)
+  
+  :config
+  (gptel-make-openai "OpenRouter"               ;Any name you want
+                     :host "openrouter.ai"
+                     :endpoint "/api/v1/chat/completions"
+                     :stream t
+                     :key 'chatgpt-shell-openrouter-key ;can be a function that returns the key
+                     :models '(openai/gpt-3.5-turbo
+                               mistralai/mixtral-8x7b-instruct
+                               meta-llama/codellama-34b-instruct
+                               codellama/codellama-70b-instruct
+                               google/palm-2-codechat-bison-32k
+                               google/gemini-pro))
+)
+
+
+
 ;; (use-package aider
 ;;   :straight (:host github :repo "tninja/aider.el" :files ("aider.el"))
 ;;   :config
