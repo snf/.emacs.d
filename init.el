@@ -1073,12 +1073,11 @@ List these clarification points, and await further instructions before continuin
 (use-package aidermacs
   :straight (:host github :repo "MatthewZMD/aidermacs" :files ("*.el"))
   :config
-  ;; (setq aidermacs-args '("--model" "anthropic/claude-3-5-sonnet-20241022"))
-  ;; (setq aidermacs-args '("--model" "openrouter/anthropic/claude-3.5-sonnet"))
   ;; (setq aidermacs-program '("uvx python@3.12 -m aider"))
-  (setq aidermacs-extra-args '("--architect --model openrouter/deepseek/deepseek-r1 --editor-model openrouter/anthropic/claude-3.5-sonnet --no-gitignore"))
-  ;;  --line-endings crlf
   ;; (setq aidermacs-args '("--model" "gpt-4o-mini"))
+  ;; (setq aidermacs-extra-args '("--architect --model openrouter/deepseek/deepseek-r1 --editor-model openrouter/anthropic/claude-3.5-sonnet --no-gitignore"))
+  (setq aidermacs-extra-args '("--model openrouter/google/gemini-2.5-pro-exp-03-25:free --no-gitignore"))
+  ;;  --line-endings crlf
   (setenv "OPENAI_API_KEY" chatgpt-shell-openai-key)
   (setenv "OPENROUTER_API_KEY" chatgpt-shell-openrouter-key)
   (global-set-key (kbd "C-c a") 'aidermacs-transient-menu))
