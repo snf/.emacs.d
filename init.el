@@ -1076,7 +1076,7 @@ List these clarification points, and await further instructions before continuin
   ;; (setq aidermacs-program '("uvx python@3.12 -m aider"))
   ;; (setq aidermacs-args '("--model" "gpt-4o-mini"))
   ;; (setq aidermacs-extra-args '("--architect --model openrouter/deepseek/deepseek-r1 --editor-model openrouter/anthropic/claude-3.5-sonnet --no-gitignore"))
-  (setq aidermacs-extra-args '("--model openrouter/google/gemini-2.5-pro-exp-03-25:free --no-gitignore"))
+  (setq aidermacs-extra-args '("--model" "openrouter/google/gemini-2.5-pro-preview-03-25" "--no-gitignore" "--edit-format" "diff-fenced"))
   ;;  --line-endings crlf
   (setenv "OPENAI_API_KEY" chatgpt-shell-openai-key)
   (setenv "OPENROUTER_API_KEY" chatgpt-shell-openrouter-key)
