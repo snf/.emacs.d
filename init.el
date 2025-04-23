@@ -631,7 +631,7 @@
 	  (regex . ("https://github.com/tree-sitter/tree-sitter-regex"))
 	  (typescript . ("https://github.com/tree-sitter/tree-sitter-typescript" "master" "typescript/src"))
 	  (ruby . ("https://github.com/tree-sitter/tree-sitter-ruby"))
-	  (rust . ("https://github.com/tree-sitter/tree-sitter-rust"))
+	  (rust . ("https://github.com/tree-sitter/tree-sitter-rust" "v0.23.3"))
 	  (sql . ("https://github.com/m-novikov/tree-sitter-sql"))
 	  (toml . ("https://github.com/tree-sitter/tree-sitter-toml"))
 	  ;; (zig . ("https://github.com/GrayJack/tree-sitter-zig"))
