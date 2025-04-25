@@ -1006,15 +1006,30 @@ List these clarification points, and await further instructions before continuin
 ")
 	)))
 
+  (add-to-list 'chatgpt-shell-models
+               (chatgpt-shell-openrouter-make-model
+                :version "deepseek/deepseek-v3"
+                :short-version "deepseek-v3"
+                :label "DeepSeekV3:Free"
+                :context-window 128000
+                :token-width 4))
 
-  (push (chatgpt-shell-openrouter-make-model
-                   :version "deepseek/deepseek-r1:free"
-                   :short-version "deepseek-r1:free"
-                   :label "DeepSeekR1:Free"
-                   :context-window 128000
-                   :token-width 16
-                   )
-        chatgpt-shell-models)
+  (add-to-list 'chatgpt-shell-models
+               (chatgpt-shell-openrouter-make-model
+                :version "deepseek/deepseek-r1"
+                :short-version "deepseek-r1"
+                :label "DeepSeekR1:Free"
+                :context-window 128000
+                :token-width 4))
+  (add-to-list 'chatgpt-shell-models
+               (chatgpt-shell-openrouter-make-model
+                :version "google/gemini-2.5-pro-preview-03-25"
+                :short-version "google/gemini-2.5-pro-preview-03-25"
+                :label "Gemini2.5 Pro Preview"
+                :context-window 128000
+                :token-width 4))
+
+  ;; (setq chatgpt-shell-models ())
 
   ;; (advice-add 'chatgpt-shell-openrouter-models :filter-return
   ;;             #'chatgpt-shell-openrouter-add-models)
@@ -1034,6 +1049,8 @@ List these clarification points, and await further instructions before continuin
 
 (use-package gptel
   :straight (gptel :type git :host github :repo "karthink/gptel")
+  :bind
+  ("C-c g" . gptel-menu)
   :custom
   (gptel-api-key chatgpt-shell-openai-key)
   
@@ -1044,11 +1061,17 @@ List these clarification points, and await further instructions before continuin
                      :stream t
                      :key 'chatgpt-shell-openrouter-key ;can be a function that returns the key
                      :models '(openai/gpt-3.5-turbo
-                               mistralai/mixtral-8x7b-instruct
-                               meta-llama/codellama-34b-instruct
-                               codellama/codellama-70b-instruct
-                               google/palm-2-codechat-bison-32k
-                               google/gemini-pro))
+                               openai/o4-mini-high ;; reasoning set to high
+                               qwen/qwq-32b
+                               perplexity/sonar
+                               perplexity/sonar-reasoning-pro
+                               perplexity/sonar-deep-research
+                               microsoft/mai-ds-r1:free
+                               anthropic/claude-3.7-sonnet
+                               anthropic/claude-3.7-sonnet:thinking
+                               deepseek/deepseek-r1
+                               google/gemini-2.5-flash-preview:thinking
+                               google/gemini-2.5-pro-preview-03-25))
 )
 
 
