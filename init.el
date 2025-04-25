@@ -1072,6 +1072,9 @@ List these clarification points, and await further instructions before continuin
                                deepseek/deepseek-r1
                                google/gemini-2.5-flash-preview:thinking
                                google/gemini-2.5-pro-preview-03-25))
+
+  (add-to-list 'gptel-directives
+               '(quant . "You are a large language model and a helpful quantitative researcher specializing in trading of blockchain products. Provide good answers as the company depends on you. Be concise and only expand them if the user asks. You are also good at coding in python but only provide code if the user asks."))
 )
 
 
