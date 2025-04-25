@@ -1062,6 +1062,8 @@ List these clarification points, and await further instructions before continuin
                      :key 'chatgpt-shell-openrouter-key ;can be a function that returns the key
                      :models '(openai/gpt-3.5-turbo
                                openai/o4-mini-high ;; reasoning set to high
+                               openai/gpt-4o-mini-search-preview
+                               openai/gpt-4o-search-preview
                                qwen/qwq-32b
                                perplexity/sonar
                                perplexity/sonar-reasoning-pro
