@@ -1079,6 +1079,9 @@ List these clarification points, and await further instructions before continuin
                '(quant . "You are a large language model and a helpful quantitative researcher specializing in trading of blockchain products. Provide good answers as the company depends on you. Be concise and only expand them if the user asks. You are also good at coding in python but only provide code if the user asks."))
 )
 
+(use-package mcp
+  :straight (mcp :type git :host github :repo "lizqwerscott/mcp.el")
+)
 
 
 ;; (use-package aider
