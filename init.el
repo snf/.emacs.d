@@ -1053,7 +1053,7 @@ List these clarification points, and await further instructions before continuin
   ("C-c g" . gptel-menu)
   :custom
   (gptel-api-key chatgpt-shell-openai-key)
-  
+  ;; (gptel-log-level "debug")
   :config
   (gptel-make-openai "OpenRouter"               ;Any name you want
                      :host "openrouter.ai"
@@ -1065,6 +1065,7 @@ List these clarification points, and await further instructions before continuin
                                openai/gpt-4o-mini-search-preview
                                openai/gpt-4o-search-preview
                                qwen/qwq-32b
+                               qwen/qwen3-235b-a22b:free
                                perplexity/sonar
                                perplexity/sonar-reasoning-pro
                                perplexity/sonar-deep-research
@@ -1081,6 +1082,55 @@ List these clarification points, and await further instructions before continuin
 
 (use-package mcp
   :straight (mcp :type git :host github :repo "lizqwerscott/mcp.el")
+  ;; :custom
+  ;; (mcp-log-level 'debug)
+  :config
+  (setq mcp-hub-servers
+      '(
+        ("google-search" . (
+                        :command "node"
+                        :args ("/opt/google-search-mcp/dist/google-search.js")
+                        :env (:GOOGLE_API_KEY google-search-key
+                              :GOOGLE_SEARCH_ENGINE_ID "your-custom-search-engine-id"
+                              )))
+        ("docs-rs" . (
+                        :command "/opt/docs-rs-mcp/target/release/docs-rs-mcp"
+                                 ))
+
+        ))
+
+  (defun gptel-mcp-register-tool ()
+    (interactive)
+    (let ((tools (mcp-hub-get-all-tool :asyncp t :categoryp t)))
+      (mapcar #'(lambda (tool)
+                  (apply #'gptel-make-tool
+                         tool))
+              tools)))
+
+  (defun gptel-mcp-use-tool ()
+    (interactive)
+    (let ((tools (mcp-hub-get-all-tool :asyncp t :categoryp t)))
+      (mapcar #'(lambda (tool)
+                  (let ((path (list (plist-get tool :category)
+                                    (plist-get tool :name))))
+                    (push (gptel-get-tool path)
+                          gptel-tools)))
+              tools)))
+
+  (defun gptel-mcp-close-use-tool ()
+    (interactive)
+    (let ((tools (mcp-hub-get-all-tool :asyncp t :categoryp t)))
+      (mapcar #'(lambda (tool)
+                  (let ((path (list (plist-get tool :category)
+                                    (plist-get tool :name))))
+                    (setq gptel-tools
+                          (cl-remove-if #'(lambda (tool)
+                                            (equal path
+                                                   (list (gptel-tool-category tool)
+                                                         (gptel-tool-name tool))))
+                                        gptel-tools))))
+              tools)))
+
 )
 
 
