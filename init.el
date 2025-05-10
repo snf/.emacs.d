@@ -1231,6 +1231,50 @@ List these clarification points, and await further instructions before continuin
   ;;   (define-key company-active-map (kbd "TAB") 'company-copilot-tab))
   )
 
+(use-package minuet
+  ;; :after company-mode
+  :straight (:host github :repo "milanglacier/minuet-ai.el")
+  :disabled
+  :bind
+  (("M-y" . #'minuet-complete-with-minibuffer) ;; use minibuffer for completion
+   ("M-i" . #'minuet-show-suggestion) ;; use overlay for completion
+   ("C-c m" . #'minuet-configure-provider)
+   :map minuet-active-mode-map
+   ;; These keymaps activate only when a minuet suggestion is displayed in the current buffer
+   ("M-<left>" . #'minuet-previous-suggestion) ;; invoke completion or cycle to next completion
+   ("M-<right>" . #'minuet-next-suggestion) ;; invoke completion or cycle to previous completion
+   ("C-p" . #'minuet-accept-suggestion) ;; accept whole completion
+   ;; Accept the first line of completion, or N lines with a numeric-prefix:
+   ;; e.g. C-u 2 M-a will accepts 2 lines of completion.
+   ;; ("M-a" . #'minuet-accept-suggestion-line)
+   ;; ("M-e" . #'minuet-dismiss-suggestion)
+   )
+  ;; :hook
+  ;; (rust-mode . copilot-mode)
+  ;; (rust-ts-mode . copilot-mode)
+  ;; :config
+  ;; (defun company-copilot-tab ()
+  ;;   (interactive)
+  ;;   (or (copilot-accept-completion)
+  ;;       (company-indent-or-complete-common nil)))
+  :config
+  (setq minuet-provider 'openai-compatible)
+  (setq minuet-request-timeout 2.5)
+  (setq minuet-auto-suggestion-throttle-delay 1.5) ;; Increase to reduce costs and avoid rate limits
+  (setq minuet-auto-suggestion-debounce-delay 0.6) ;; Increase to reduce costs and avoid rate limits
+
+  (plist-put minuet-openai-compatible-options :end-point "https://openrouter.ai/api/v1/chat/completions")
+  (plist-put minuet-openai-compatible-options :api-key 'chatgpt-shell-openrouter-key)
+  ;; (plist-put minuet-openai-compatible-options :model "deepseek/deepseek-chat-v3-0324")
+  ;; (plist-put minuet-openai-compatible-options :model "mistralai/codestral-2501")
+  ;; (plist-put minuet-openai-compatible-options :model "google/gemini-2.5-flash-preview")
+  (plist-put minuet-openai-compatible-options :model "inception/mercury-coder-small-beta")
+  ;; Prioritize throughput for faster completion
+  (minuet-set-optional-options minuet-openai-compatible-options :provider '(:sort "throughput"))
+  (minuet-set-optional-options minuet-openai-compatible-options :max_tokens 56)
+  (minuet-set-optional-options minuet-openai-compatible-options :top_p 0.9)
+  )
+
 ;; notifications
 (use-package alert
   :config
