@@ -1074,7 +1074,7 @@ List these clarification points, and await further instructions before continuin
                                anthropic/claude-3.7-sonnet:thinking
                                deepseek/deepseek-r1
                                google/gemini-2.5-flash-preview:thinking
-                               google/gemini-2.5-pro-preview-03-25))
+                               google/gemini-2.5-pro-preview-06-05))
 
   (add-to-list 'gptel-directives
                '(quant . "You are a large language model and a helpful quantitative researcher specializing in trading of blockchain products. Provide good answers as the company depends on you. Be concise and only expand them if the user asks. You are also good at coding in python but only provide code if the user asks."))
@@ -1141,7 +1141,7 @@ List these clarification points, and await further instructions before continuin
 ;;   ;; (setq aider-args '("--model" "anthropic/claude-3-5-sonnet-20241022"))
 ;;   ;; (setenv "ANTHROPIC_API_KEY" anthropic-api-key)
 ;;   ;; Or use chatgpt model since it is most well known
-;;   (setq aider-args '("--model" "gpt-4o-mini"))
+;;   (setq aider-args '("--model" "openrouter/gemini/gemini-2.5-pro-preview-06-05" "--thinking-tokens" "32k" "--no-gitignore" "--edit-format" "diff-fenced"))
 ;;   (setenv "OPENAI_API_KEY" chatgpt-shell-openai-key)
 ;;   (setenv "OPENROUTER_API_KEY" chatgpt-shell-openrouter-key)
 ;;   ;; Or use gemini v2 model since it is very good and free
@@ -1159,7 +1159,7 @@ List these clarification points, and await further instructions before continuin
   ;; (setq aidermacs-program '("uvx python@3.12 -m aider"))
   ;; (setq aidermacs-args '("--model" "gpt-4o-mini"))
   ;; (setq aidermacs-extra-args '("--architect --model openrouter/deepseek/deepseek-r1 --editor-model openrouter/anthropic/claude-3.5-sonnet --no-gitignore"))
-  (setq aidermacs-extra-args '("--model" "openrouter/google/gemini-2.5-pro-preview" "--no-gitignore" "--edit-format" "diff-fenced"))
+  (setq aidermacs-extra-args '("--model" "openrouter/gemini/gemini-2.5-pro-preview-06-05" "--thinking-tokens" "32k" "--no-gitignore" "--edit-format" "diff-fenced"))
   ;;  --line-endings crlf
   (setenv "OPENAI_API_KEY" chatgpt-shell-openai-key)
   (setenv "OPENROUTER_API_KEY" chatgpt-shell-openrouter-key)
