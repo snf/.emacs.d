@@ -505,6 +505,8 @@
 ;; (use-package projectile
 ;;   :bind (("C-c p" . projectile-command-map))
 ;;   )
+
+;; Remove trailing whitespaces in edited lines on save
 (use-package ws-butler
   :hook (prog-mode . ws-butler-mode)
   )
