@@ -941,8 +941,8 @@ results."
   )
 
 (use-package prettier
-  :init
-  (global-prettier-mode)
+  ;; :init
+  ;; (global-prettier-mode)
 )
 
 (use-package web-mode
