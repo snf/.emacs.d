@@ -1089,15 +1089,20 @@ List these clarification points, and await further instructions before continuin
   :config
   (setq mcp-hub-servers
       '(
-        ("google-search" . (
-                        :command "node"
-                        :args ("/opt/google-search-mcp/dist/google-search.js")
-                        :env (:GOOGLE_API_KEY google-search-key
-                              :GOOGLE_SEARCH_ENGINE_ID "your-custom-search-engine-id"
-                              )))
-        ("docs-rs" . (
-                        :command "/opt/docs-rs-mcp/target/release/docs-rs-mcp"
-                                 ))
+        ;; ("google-search" . (
+        ;;                 :command "node"
+        ;;                 :args ("/opt/google-search-mcp/dist/google-search.js")
+        ;;                 :env (:GOOGLE_API_KEY google-search-key
+        ;;                       :GOOGLE_SEARCH_ENGINE_ID "your-custom-search-engine-id"
+        ;;                       )))
+        ;; ("docs-rs" . (
+        ;;               :command "/opt/docs-rs-mcp/target/release/docs-rs-mcp"
+        ;;                          ))
+        ("task-master-ai" . (
+                             :command "npx"
+                             :args ("-y" "--package=task-master-ai" "task-master-ai")
+                             :env (:OPENROUTER_API_KEY chatgpt-shell-openrouter-key)
+                             ))
 
         ))
 
