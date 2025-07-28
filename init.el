@@ -820,7 +820,8 @@ results."
   )
 (use-package org
   :straight (:type built-in)
-  :bind (:map org-mode-map
+  :bind (("C-c c" . org-capture)
+         :map org-mode-map
               ("C-c C-j" . consult-org-heading)
               )
   :custom
