@@ -829,15 +829,27 @@ results."
               ("C-c C-j" . consult-org-heading)
               )
   :custom
-  (org-refile-targets '((nil :maxlevel . 9)
-                        (org-agenda-files :maxlevel . 9)))
+  (org-agenda-files (directory-files-recursively "/projects/notes" "\\.org$"))
+  (org-refile-targets
+      (list
+       (cons nil '(:maxlevel . 9))
+       (cons org-agenda-files '(:maxlevel . 9))
+       (cons (directory-files-recursively "/projects/notes/" "\\.org$") '(:maxlevel . 9))))
+
+   ;; '((nil :maxlevel . 9)
+   ;;                      (org-agenda-files :maxlevel . 9)
+   ;;                      ((directory-files-recursively "/projects/notes/" "\\.org$") :maxlevel . 9)
+   ;;                    ))
   (org-outline-path-complete-in-steps nil)         ; Refile in a single go
   (org-refile-use-outline-path t)                  ; Show full paths for refiling
   (org-reverse-note-order t)
   (org-agenda-include-diary t)
-  ;; (org-refile-targets (quote (("tickler.org" :maxlevel . 1)
-  ;;                             ("organizer.org" :level . 1)
-  ;;                             ("someday.org" :level . 2))))
+  (org-capture-templates
+   '(("t" "Todo" entry (file "/projects/notes/todo.org")
+      "* TODO %?\n  %U\n  %a\n  %i" :empty-lines 1)
+     ("s" "Schedule todo" entry (file "/projects/notes/todo.org")
+      "* TODO %?\n  SCHEDULED: <%<%Y-%m-%d %H:%M>>\n  %i\n  %a" :empty-lines 1)
+     ))
   :init
   (add-hook 'org-mode-hook #'(lambda ()
 			       ;; make the lines in the buffer wrap around the edges of the screen.
