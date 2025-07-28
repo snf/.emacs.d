@@ -845,10 +845,14 @@ results."
                                (visual-line-mode)
                                (org-indent-mode)))
   )
+
 (use-package org-superstar-mode
   :straight (:host github :repo "integral-dw/org-superstar-mode" :branch "master")
+  :custom
+  (org-superstar-remove-leading-stars t)
   :hook (org-mode . org-superstar-mode)
   )
+
 (use-package powershell
   ;; :if (string= window-system 'w32)
   :hook (powershell-mode . lsp)
