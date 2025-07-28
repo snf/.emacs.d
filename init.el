@@ -65,6 +65,10 @@
 ;; Install use-package
 (straight-use-package 'use-package)
 
+(defun my/ansi-color-apply-on-region (begin end)
+  (interactive "r")
+  (ansi-color-apply-on-region begin end t))
+
 ;; Configure use-package to use straight.el by default
 (use-package straight
          :custom (straight-use-package-by-default t))
