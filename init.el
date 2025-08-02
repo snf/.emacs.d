@@ -530,50 +530,50 @@
   
   )
 
-;; (use-package vterm
-;;   :if (not (string= window-system 'w32))
-;;   :bind
-;;   (:map vterm-mode-map
-;;         ("M-y" . vterm-yank-pop)
-;; 	)
-;;   (:map vterm-copy-mode-map
-;; 	("q" . vterm-copy-mode))
-;;   :config
-;;   (defun run-in-vterm-kill (process event)
-;;     "A process sentinel. Kills PROCESS's buffer if it is live."
-;;     (let ((b (process-buffer process)))
-;;       (and (buffer-live-p b)
-;;            (kill-buffer b))))
+(use-package vterm
+  :if (not (string= window-system 'w32))
+  :bind
+  (:map vterm-mode-map
+        ("M-y" . vterm-yank-pop)
+	)
+  (:map vterm-copy-mode-map
+	("q" . vterm-copy-mode))
+  :config
+  (defun run-in-vterm-kill (process event)
+    "A process sentinel. Kills PROCESS's buffer if it is live."
+    (let ((b (process-buffer process)))
+      (and (buffer-live-p b)
+           (kill-buffer b))))
 
-;;   (defun run-in-vterm (command)
-;;     "Execute string COMMAND in a new vterm.
+  (defun run-in-vterm (command)
+    "Execute string COMMAND in a new vterm.
 
-;; Interactively, prompt for COMMAND with the current buffer's file
-;; name supplied. When called from Dired, supply the name of the
-;; file at point.
+Interactively, prompt for COMMAND with the current buffer's file
+name supplied. When called from Dired, supply the name of the
+file at point.
 
-;; Like `async-shell-command`, but run in a vterm for full terminal features.
+Like `async-shell-command`, but run in a vterm for full terminal features.
 
-;; The new vterm buffer is named in the form `*foo bar.baz*`, the
-;; command and its arguments in earmuffs.
+The new vterm buffer is named in the form `*foo bar.baz*`, the
+command and its arguments in earmuffs.
 
-;; When the command terminates, the shell remains open, but when the
-;; shell exits, the buffer is killed."
-;;     (interactive
-;;      (list
-;;       (let* ((f (cond (buffer-file-name)
-;;                       ((eq major-mode 'dired-mode)
-;;                        (dired-get-filename nil t))))
-;;              (filename (concat " " (shell-quote-argument (and f (file-relative-name f))))))
-;; 	(read-shell-command "Terminal command: "
-;;                             (cons filename 0)
-;;                             (cons 'shell-command-history 1)
-;;                             (list filename)))))
-;;     (with-current-buffer (vterm (concat "*" command "*"))
-;;       (set-process-sentinel vterm--process #'run-in-vterm-kill)
-;;       (vterm-send-string command)
-;;       (vterm-send-return)))
-;;   )
+When the command terminates, the shell remains open, but when the
+shell exits, the buffer is killed."
+    (interactive
+     (list
+      (let* ((f (cond (buffer-file-name)
+                      ((eq major-mode 'dired-mode)
+                       (dired-get-filename nil t))))
+             (filename (concat " " (shell-quote-argument (and f (file-relative-name f))))))
+	(read-shell-command "Terminal command: "
+                            (cons filename 0)
+                            (cons 'shell-command-history 1)
+                            (list filename)))))
+    (with-current-buffer (vterm (concat "*" command "*"))
+      (set-process-sentinel vterm--process #'run-in-vterm-kill)
+      (vterm-send-string command)
+      (vterm-send-return)))
+  )
 
 (use-package undo-fu
   :config
@@ -1039,15 +1039,15 @@ List these clarification points, and await further instructions before continuin
 
   (add-to-list 'chatgpt-shell-models
                (chatgpt-shell-openrouter-make-model
-                :version "deepseek/deepseek-r1"
-                :short-version "deepseek-r1"
+                :version "deepseek/deepseek-r1-0528"
+                :short-version "deepseek-r1-0528"
                 :label "DeepSeekR1:Free"
                 :context-window 128000
                 :token-width 4))
   (add-to-list 'chatgpt-shell-models
                (chatgpt-shell-openrouter-make-model
-                :version "google/gemini-2.5-pro-preview-03-25"
-                :short-version "google/gemini-2.5-pro-preview-03-25"
+                :version "google/gemini-2.5-pro"
+                :short-version "google/gemini-2.5-pro"
                 :label "Gemini2.5 Pro Preview"
                 :context-window 128000
                 :token-width 4))
@@ -1093,11 +1093,11 @@ List these clarification points, and await further instructions before continuin
                                perplexity/sonar-reasoning-pro
                                perplexity/sonar-deep-research
                                microsoft/mai-ds-r1:free
-                               anthropic/claude-3.7-sonnet
-                               anthropic/claude-3.7-sonnet:thinking
-                               deepseek/deepseek-r1
-                               google/gemini-2.5-flash-preview:thinking
-                               google/gemini-2.5-pro-preview-06-05))
+                               anthropic/claude-4-sonnet
+                               anthropic/claude-4-sonnet:thinking
+                               deepseek/deepseek-r1-0528
+                               google/gemini-2.5-flash:thinking
+                               google/gemini-2.5-pro))
 
   (add-to-list 'gptel-directives
                '(quant . "You are a large language model and a helpful quantitative researcher specializing in trading of blockchain products. Provide good answers as the company depends on you. Be concise and only expand them if the user asks. You are also good at coding in python but only provide code if the user asks."))
@@ -1185,13 +1185,27 @@ List these clarification points, and await further instructions before continuin
   (aidermacs-show-diff-after-change nil)
   :config
   ;; (setq aidermacs-program '("uvx python@3.12 -m aider"))
-  ;; (setq aidermacs-args '("--model" "gpt-4o-mini"))
   ;; (setq aidermacs-extra-args '("--architect" "--model" "openrouter/deepseek/deepseek-r1" "--editor-model" "openrouter/anthropic/claude-3.7-sonnet" "--no-gitignore"))
-  (setq aidermacs-extra-args '("--model" "openrouter/google/gemini-2.5-pro" "--thinking-tokens" "32k" "--no-gitignore" "--edit-format" "diff-fenced"))
+  ;; (setq aidermacs-extra-args '("--model" "openrouter/google/gemini-2.5-pro" "--thinking-tokens" "32k" "--no-gitignore" "--edit-format" "diff-fenced"))
+  ;; (setq aidermacs-extra-args '("--model" "o3" "--reasoning-effort" "high"))
+  (setq aidermacs-extra-args '("--model" "openrouter/moonshotai/kimi-k2"))
+  ;; (setq aidermacs-extra-args '("--model" "openrouter/z-ai/glm-4.5"))
+  ;; (setq aidermacs-extra-args '("--architect" "--model" "openrouter/deepseek/deepseek-r1-0528" "--editor-model" "--model" "openrouter/z-ai/glm-4.5"))
+  ;; (setq aidermacs-extra-args '("--model" "openrouter/qwen/qwen3-coder"))
   ;;  --line-endings crlf
   (setenv "OPENAI_API_KEY" chatgpt-shell-openai-key)
   (setenv "OPENROUTER_API_KEY" chatgpt-shell-openrouter-key)
   (global-set-key (kbd "C-c a") 'aidermacs-transient-menu))
+
+(use-package claude-code-ide
+  :straight (:type git :host github :repo "manzaltu/claude-code-ide.el")
+  :bind ("C-c C-'" . claude-code-ide-menu) ; Set your favorite keybinding
+  :custom
+  (claude-code-ide-cli-path "/usr/local/bin/ccr-wrapper")
+  (claude-code-ide-terminal-backend 'eat)
+  :config
+  (claude-code-ide-emacs-tools-setup) ; Optionally enable Emacs MCP tools
+  )
 
 (use-package whisper
   :straight (:host github :repo "natrys/whisper.el" :files ("*.el"))
