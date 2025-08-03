@@ -1,51 +1,3 @@
-;; Make startup faster by reducing the frequency of garbage
-;; collection.  The default is 0.8MB.  Measured in bytes.
-(setq gc-cons-threshold (* 50 1000 1000))
-;; Portion of heap used for allocation.  Defaults to 0.1.
-(setq gc-cons-percentage 0.6)
-
-(menu-bar-mode -1)
-;; (desktop-save-mode)
-(tool-bar-mode -1)
-;; (scroll-bar-mode -11)
-(setq visible-bell t)
-
-(setq indent-tabs-mode -1)
-
-;; Prevent Emacs from splitting windows in the big screen
-(setq split-width-threshold 260)
-
-;; Disable welcome screen
-(setq inhibit-startup-screen t)
-
-;; Suppress message "For information about GNU Emacs..."
-(setq inhibit-startup-echo-area-message "")
-
-;; Improve LSP interactions
-(setq read-process-output-max (* 1024 1024)) ;; 1mb
-
-;; (setq scroll-preserve-screen-position 'always)
-
-(add-to-list 'default-frame-alist
-             '(font . "DejaVu Sans Mono-12"))
-
-;; (setq make-backup-files nil)
-(setq auto-save-file-name-transforms
-      '((".*" "~/.emacs.d/auto-save-list/" t))
-      backup-directory-alist
-      '(("." . "~/.emacs.d/backups/"))
-      )
-
-;; (with-eval-after-load 'tramp
-;;   (add-to-list 'tramp-remote-process-environment "BASH_ENV=~/.bashrc"))
-(require 'tramp)
-(add-to-list 'tramp-remote-path 'tramp-own-remote-path)
-(add-to-list 'tramp-remote-process-environment "BASH_ENV=~/.bashrc")
-
-(setq custom-file "~/.emacs.d/custom.el")
-(load custom-file t)
-
-;; Install straight.el
 (defvar bootstrap-version)
 (let ((bootstrap-file
        (expand-file-name
@@ -64,15 +16,45 @@
 
 ;; Install use-package
 (straight-use-package 'use-package)
-
-(defun my/ansi-color-apply-on-region (begin end)
-  (interactive "r")
-  (ansi-color-apply-on-region begin end t))
-
-;; Configure use-package to use straight.el by default
 (use-package straight
-         :custom (straight-use-package-by-default t))
+  :custom (straight-use-package-by-default t))
 
+(use-package emacs
+  :init
+  ;; Make startup faster by reducing the frequency of garbage
+  ;; collection.  The default is 0.8MB.  Measured in bytes.
+  (setq gc-cons-threshold (* 50 1000 1000))
+  ;; Portion of heap used for allocation.  Defaults to 0.1.
+  (setq gc-cons-percentage 0.6)
+
+  (setq custom-file "~/.emacs.d/custom.el")
+  (load custom-file t)
+
+  :config
+  (menu-bar-mode -1)
+  (tool-bar-mode -1)
+  (setq visible-bell t)
+  (setq indent-tabs-mode -1)
+  (setq split-width-threshold 260)
+  (setq inhibit-startup-screen t)
+  (setq inhibit-startup-echo-area-message "")
+  (setq read-process-output-max (* 1024 1024))
+  (add-to-list 'default-frame-alist
+               '(font . "DejaVu Sans Mono-12"))
+  (setq auto-save-file-name-transforms
+        '((".*" "~/.emacs.d/auto-save-list/" t))
+        backup-directory-alist
+        '(("." . "~/.emacs.d/backups/")))
+
+  (require 'tramp)
+  (add-to-list 'tramp-remote-path 'tramp-own-remote-path)
+  (add-to-list 'tramp-remote-process-environment "BASH_ENV=~/.bashrc")
+  (defun my/ansi-color-apply-on-region (begin end)
+    (interactive "r")
+    (ansi-color-apply-on-region begin end t))
+  )
+
+;; === packages ===
 (use-package project
   :bind (:map project-prefix-map
               ("m" . magit-project-status)
