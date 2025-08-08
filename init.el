@@ -1258,9 +1258,10 @@ List these clarification points, and await further instructions before continuin
 (use-package minuet
   ;; :after company-mode
   :straight (:host github :repo "milanglacier/minuet-ai.el")
-  :disabled
+  ;; :disabled
   :bind
-  (("M-y" . #'minuet-complete-with-minibuffer) ;; use minibuffer for completion
+  (
+   ;; ("M-y" . #'minuet-complete-with-minibuffer) ;; use minibuffer for completion
    ("M-i" . #'minuet-show-suggestion) ;; use overlay for completion
    ("C-c m" . #'minuet-configure-provider)
    :map minuet-active-mode-map
@@ -1292,7 +1293,8 @@ List these clarification points, and await further instructions before continuin
   ;; (plist-put minuet-openai-compatible-options :model "deepseek/deepseek-chat-v3-0324")
   ;; (plist-put minuet-openai-compatible-options :model "mistralai/codestral-2501")
   ;; (plist-put minuet-openai-compatible-options :model "google/gemini-2.5-flash-preview")
-  (plist-put minuet-openai-compatible-options :model "inception/mercury-coder-small-beta")
+  ;; (plist-put minuet-openai-compatible-options :model "inception/mercury-coder-small-beta")
+  (plist-put minuet-openai-compatible-options :model "mistralai/codestral-2508")
   ;; Prioritize throughput for faster completion
   (minuet-set-optional-options minuet-openai-compatible-options :provider '(:sort "throughput"))
   (minuet-set-optional-options minuet-openai-compatible-options :max_tokens 56)
