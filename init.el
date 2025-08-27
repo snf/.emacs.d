@@ -494,7 +494,9 @@
 
 ;; Remove trailing whitespaces in edited lines on save
 (use-package ws-butler
-  :hook (prog-mode . ws-butler-mode)
+  :hook
+  (prog-mode . ws-butler-mode)
+  (org-mode . ws-butler-mode)
   )
 
 
