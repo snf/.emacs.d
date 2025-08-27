@@ -1083,6 +1083,16 @@ List these clarification points, and await further instructions before continuin
                                google/gemini-2.5-flash:thinking
                                google/gemini-2.5-pro))
 
+  (gptel-make-openai "OpenRouter-Thinking"               ;Any name you want
+                     :host "openrouter.ai"
+                     :endpoint "/api/v1/chat/completions"
+                     :stream t
+                     :key 'chatgpt-shell-openrouter-key ;can be a function that returns the key
+                     :request-params '(:reasoning_tokens 5000)
+                     :models '(
+                               google/gemini-2.5-flash
+                     ))
+
   (add-to-list 'gptel-directives
                '(quant . "You are a large language model and a helpful quantitative researcher specializing in trading of blockchain products. Provide good answers as the company depends on you. Be concise and only expand them if the user asks. You are also good at coding in python but only provide code if the user asks."))
 )
@@ -1170,9 +1180,9 @@ List these clarification points, and await further instructions before continuin
   :config
   ;; (setq aidermacs-program '("uvx python@3.12 -m aider"))
   ;; (setq aidermacs-extra-args '("--architect" "--model" "openrouter/deepseek/deepseek-r1" "--editor-model" "openrouter/anthropic/claude-3.7-sonnet" "--no-gitignore"))
-  ;; (setq aidermacs-extra-args '("--model" "openrouter/google/gemini-2.5-pro" "--thinking-tokens" "32k" "--no-gitignore" "--edit-format" "diff-fenced"))
+  (setq aidermacs-extra-args '("--model" "openrouter/google/gemini-2.5-pro" "--thinking-tokens" "32k" "--no-gitignore" "--edit-format" "diff-fenced"))
   ;; (setq aidermacs-extra-args '("--model" "o3" "--reasoning-effort" "high"))
-  (setq aidermacs-extra-args '("--model" "openrouter/moonshotai/kimi-k2"))
+  ;; (setq aidermacs-extra-args '("--model" "openrouter/moonshotai/kimi-k2"))
   ;; (setq aidermacs-extra-args '("--model" "openrouter/z-ai/glm-4.5"))
   ;; (setq aidermacs-extra-args '("--architect" "--model" "openrouter/deepseek/deepseek-r1-0528" "--editor-model" "--model" "openrouter/z-ai/glm-4.5"))
   ;; (setq aidermacs-extra-args '("--model" "openrouter/qwen/qwen3-coder"))
@@ -1297,6 +1307,8 @@ List these clarification points, and await further instructions before continuin
   ;; (plist-put minuet-openai-compatible-options :model "google/gemini-2.5-flash-preview")
   ;; (plist-put minuet-openai-compatible-options :model "inception/mercury-coder-small-beta")
   (plist-put minuet-openai-compatible-options :model "mistralai/codestral-2508")
+  ;; (plist-put minuet-openai-compatible-options :model "qwen/qwen3-coder")
+
   ;; Prioritize throughput for faster completion
   (minuet-set-optional-options minuet-openai-compatible-options :provider '(:sort "throughput"))
   (minuet-set-optional-options minuet-openai-compatible-options :max_tokens 56)
