@@ -1062,6 +1062,10 @@ List these clarification points, and await further instructions before continuin
   :straight (gptel :type git :host github :repo "karthink/gptel")
   :bind
   ("C-c g" . gptel-menu)
+  :bind (:map gptel-mode-map
+              ("C-c C-c" . gptel-abort)
+              )
+
   :custom
   (gptel-api-key chatgpt-shell-openai-key)
   ;; (gptel-log-level "debug")
