@@ -968,8 +968,12 @@ results."
   :after yaml-mode
   :hook (yaml-mode . yaml-pro-mode)
   )
-(use-package z3-mode
-  :straight (z3-mode :type git :host github :repo "zv/z3-mode")
+;; (use-package z3-mode
+;;   :straight (z3-mode :type git :host github :repo "zv/z3-mode")
+;;   )
+
+(use-package boogie-friends
+  :straight (boogie-friends :type git :host github :repo "boogie-org/boogie-friends")
   )
 
 ;; tools
