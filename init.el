@@ -1088,8 +1088,11 @@ List these clarification points, and await further instructions before continuin
                                anthropic/claude-4-sonnet
                                anthropic/claude-4-sonnet:thinking
                                deepseek/deepseek-r1-0528
-                               google/gemini-2.5-flash:thinking
-                               google/gemini-2.5-pro))
+                               google/gemini-2.5-flash
+                               google/gemini-2.5-pro
+                               openai/chatgpt-5-mini
+                               openai/chatgpt-5
+                               ))
 
   (gptel-make-openai "OpenRouter-Thinking"               ;Any name you want
                      :host "openrouter.ai"
@@ -1099,6 +1102,8 @@ List these clarification points, and await further instructions before continuin
                      :request-params '(:reasoning_tokens 5000)
                      :models '(
                                google/gemini-2.5-flash
+                               openai/chatgpt-5-mini
+                               openai/chatgpt-5
                      ))
 
   (add-to-list 'gptel-directives
@@ -1314,8 +1319,8 @@ List these clarification points, and await further instructions before continuin
   ;; (plist-put minuet-openai-compatible-options :model "mistralai/codestral-2501")
   ;; (plist-put minuet-openai-compatible-options :model "google/gemini-2.5-flash-preview")
   ;; (plist-put minuet-openai-compatible-options :model "inception/mercury-coder-small-beta")
-  (plist-put minuet-openai-compatible-options :model "mistralai/codestral-2508")
-  ;; (plist-put minuet-openai-compatible-options :model "qwen/qwen3-coder")
+  ;; (plist-put minuet-openai-compatible-options :model "mistralai/codestral-2508")
+  (plist-put minuet-openai-compatible-options :model "qwen/qwen3-coder")
 
   ;; Prioritize throughput for faster completion
   (minuet-set-optional-options minuet-openai-compatible-options :provider '(:sort "throughput"))
