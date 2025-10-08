@@ -649,9 +649,16 @@ shell exits, the buffer is killed."
   (sp-pair "[" "]" :unless '(sp-point-before-word-p))
   (sp-local-pair '(emacs-lisp-mode rust-mode) "'" "'" :actions nil)
   (sp-local-pair '(emacs-lisp-mode rust-ts-mode) "'" "'" :actions nil)
+  (sp-local-pair 'org-mode "*" "*")
+  (sp-local-pair 'org-mode "/" "/")
+  (sp-local-pair 'org-mode "_" "_")
+  (sp-local-pair 'org-mode "+" "+")
+  (sp-local-pair 'org-mode "~" "~")
+  (sp-local-pair 'org-mode "=" "=")
   :init
   (smartparens-global-mode t)
   )
+
 (use-package conda
   :after (python-mode)
   :init
