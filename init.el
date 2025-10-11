@@ -1223,18 +1223,20 @@ List these clarification points, and await further instructions before continuin
 
 (use-package whisper
   :straight (:host github :repo "natrys/whisper.el" :files ("*.el"))
-  :bind ("C-c w" . whisper-run)
+  :bind (("C-c w" . my/whisper-transcribe)
+         ("C-c M-w" . my/whisper-translate))
   :config
   (setq whisper-install-directory "/tmp/"
         whisper--ffmpeg-input-format "alsa"
-        whisper--ffmpeg-input-device "hw:1"
+        whisper--ffmpeg-input-device "hw:2"
         ;; whisper-install-directory "~/.emacs.d/whisper/"
-        whisper-model "base"
+        ;; whisper-model "base"
         ;; whisper-model "medium"
+        whisper-model "small"
         ;; whisper-language "en"
         whisper-language "es"
+        ;; whisper-translate t
         ;; whisper-translate nil
-        whisper-translate t
         whisper-use-threads (/ (num-processors) 4))
 
   (defun my/whisper-display-in-buffer (text)
@@ -1246,16 +1248,30 @@ List these clarification points, and await further instructions before continuin
         (view-mode 1))
       (display-buffer buf)))
 
-  (defun my/whisper-record-to-buffer ()
-    "Start background recording with whisper.el and show result in buffer."
+  (defun my/whisper--run-and-display-in-buffer ()
+    "Helper to run whisper and display transcription in a dedicated buffer."
+    (let ((fn (lambda ()
+                (when-let (text (buffer-string))
+                  (my/whisper-display-in-buffer text)
+                  (remove-hook 'whisper-after-transcription-hook fn)))))
+      (add-hook 'whisper-after-transcription-hook fn)
+      (whisper-run)))
+
+  (defun my/whisper-transcribe ()
+    "Transcribe from microphone and display in buffer."
     (interactive)
-    (let ((orig-hook whisper-after-transcription-hook))
-      (add-hook 'whisper-after-transcription-hook
-                (lambda ()
-                  (when-let (text (buffer-string))
-                    (my/whisper-display-in-buffer text)
-                    (remove-hook 'whisper-after-transcription-hook this-hook))))
-      (whisper-run))))
+    ;; Make the variable buffer-local so the async `whisper-run' process sees it
+    (setq-local whisper-translate nil)
+    (whisper-run))
+
+  (defun my/whisper-translate ()
+    "Translate from microphone and display in buffer."
+    (interactive)
+    ;; Make the variable buffer-local so the async `whisper-run' process sees it
+    (setq-local whisper-translate t)
+    (whisper-run))
+
+)
 
 (use-package copilot
   ;; :after company-mode
