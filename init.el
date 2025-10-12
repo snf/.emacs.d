@@ -813,6 +813,7 @@ results."
 (use-package opencl-mode
   :mode "\\.cl\\'"
   )
+
 (use-package org
   :straight (:type built-in)
   :bind (("C-c c" . org-capture)
@@ -854,6 +855,19 @@ results."
   :custom
   (org-superstar-remove-leading-stars t)
   :hook (org-mode . org-superstar-mode)
+  )
+
+(use-package org-download
+  :straight (:host github :repo "abo-abo/org-download" :branch "master")
+  )
+
+(use-package org-rich-yank
+  :straight (:host github :repo "unhammer/org-rich-yank" :branch "master")
+  :bind (:map org-mode-map
+              ("C-M-y" . org-rich-yank)))
+
+(use-package ox-clip
+  :straight (:host github :repo "jkitchin/ox-clip" :branch "master")
   )
 
 (use-package powershell
