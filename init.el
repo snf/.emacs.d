@@ -1103,6 +1103,7 @@ List these clarification points, and await further instructions before continuin
 
   :custom
   (gptel-api-key chatgpt-shell-openai-key)
+  (gptel-default-mode 'org-mode)
   ;; (gptel-log-level "debug")
   :config
   (gptel-make-openai "OpenRouter"               ;Any name you want
@@ -1125,6 +1126,7 @@ List these clarification points, and await further instructions before continuin
                                deepseek/deepseek-r1-0528
                                google/gemini-2.5-flash
                                google/gemini-2.5-pro
+                               google/gemini-3-pro-preview
                                openai/chatgpt-5-mini
                                openai/chatgpt-5
                                ))
@@ -1203,6 +1205,19 @@ List these clarification points, and await further instructions before continuin
 
 )
 
+(use-package acp
+  :straight (:host github :repo "xenodium/acp.el")
+  :ensure t
+  )
+
+(use-package agent-shell
+  :straight (:host github :repo "xenodium/agent-shell")
+  :ensure t
+  ;; :ensure-system-package
+  ;; Add agent installation configs here
+  ;; ((claude . "brew install claude-code")
+  ;; (claude-code-acp . "npm install -g @zed-industries/claude-code-acp"))
+  )
 
 ;; (use-package aider
 ;;   :straight (:host github :repo "tninja/aider.el" :files ("aider.el"))
