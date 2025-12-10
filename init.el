@@ -1128,7 +1128,7 @@ List these clarification points, and await further instructions before continuin
                                google/gemini-2.5-pro
                                google/gemini-3-pro-preview
                                openai/chatgpt-5-mini
-                               openai/chatgpt-5
+                               openai/gpt-5.1
                                ))
 
   (gptel-make-openai "OpenRouter-Thinking"               ;Any name you want
@@ -1140,11 +1140,19 @@ List these clarification points, and await further instructions before continuin
                      :models '(
                                google/gemini-2.5-flash
                                openai/chatgpt-5-mini
-                               openai/chatgpt-5
+                               openai/gpt-5.1
                      ))
 
-  (add-to-list 'gptel-directives
-               '(quant . "You are a large language model and a helpful quantitative researcher specializing in trading of blockchain products. Provide good answers as the company depends on you. Be concise and only expand them if the user asks. You are also good at coding in python but only provide code if the user asks."))
+   (add-to-list 'gptel-directives
+                '(quant . "You are a large language model and a helpful quantitative researcher specializing in trading of blockchain products. Provide good answers as the company depends on you. Be concise and only expand them if the user asks. You are also good at coding in python but only provide code if the user asks."))
+   (add-to-list 'gptel-directives
+                '(decompile-dedaub-solidity . "This is a solidity contract that has been decompiled with Dedaub, it's pretty good at everything but
+ - identifying and aliasing variables in the memory (including the free ptr), please add names for the variables and remove free-ptr references as much as possible
+ - the function names are only identified by their address, if it's clear what the function is doing, rewrite the name
+ - it's usually too verbose adding intermediary variables, get rid of them, alias, or try to find a better way.
+ - dirty code, generally improve the code whenever you think it's relevant without changing the logic and keeping the individual functions (don't inline!)"))
+   (add-to-list 'gptel-directives
+                '(email-polish . "This is an email I'm writing. Please correct the tone, grammar and syntax whenever needed while keeping it concise and natural."))
 )
 
 (use-package mcp
