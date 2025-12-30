@@ -58,6 +58,8 @@
 (use-package project
   :bind (:map project-prefix-map
               ("m" . magit-project-status)
+              ("o" . opencode-in-project)
+              ("v" . vterm-in-project)
               )
   :custom
   (vc-directory-exclusion-list '("node_modules" "memoizeFs_cache" "contract_graphs" ".git" "target"))
@@ -515,6 +517,7 @@
   )
 
 (use-package vterm
+  :commands (opencode-in-project vterm-in-project)
   :if (not (string= window-system 'w32))
   :bind
   (:map vterm-mode-map
@@ -557,6 +560,26 @@ shell exits, the buffer is killed."
       (set-process-sentinel vterm--process #'run-in-vterm-kill)
       (vterm-send-string command)
       (vterm-send-return)))
+
+  (defun opencode-in-project ()
+    "Open vterm in the project root and execute opencode."
+    (interactive)
+    (let* ((pr (project-current))
+           (project-root (if pr (project-root pr) default-directory))
+           (default-directory project-root))
+      (with-current-buffer (vterm (concat "*opencode: " (file-name-nondirectory (directory-file-name project-root)) "*"))
+        (set-process-sentinel vterm--process #'run-in-vterm-kill)
+        (vterm-send-string "opencode")
+        (vterm-send-return))))
+
+  (defun vterm-in-project ()
+    "Open vterm in the project root."
+    (interactive)
+    (let* ((pr (project-current))
+           (project-root (if pr (project-root pr) default-directory))
+           (default-directory project-root)
+           (vterm-shell "/bin/bash"))
+      (vterm (concat "*vterm: " (file-name-nondirectory (directory-file-name project-root)) "*"))))
   )
 
 (use-package undo-fu
