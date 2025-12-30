@@ -1334,8 +1334,8 @@ List these clarification points, and await further instructions before continuin
               ;; ("s-w" . copilot-accept-completion-by-word)
               ;; ("s-l" . copilot-accept-completion-by-line)
               )
-  :hook
-  (rust-mode . copilot-mode)
+  ;; :hook
+  ;; (rust-mode . copilot-mode)
   ;; (rust-ts-mode . copilot-mode)
   ;; :config
   ;; (defun company-copilot-tab ()
@@ -1393,8 +1393,10 @@ List these clarification points, and await further instructions before continuin
   ;; (plist-put minuet-openai-compatible-options :model "mistralai/codestral-2501")
   ;; (plist-put minuet-openai-compatible-options :model "google/gemini-2.5-flash-preview")
   ;; (plist-put minuet-openai-compatible-options :model "inception/mercury-coder-small-beta")
-  ;; (plist-put minuet-openai-compatible-options :model "mistralai/codestral-2508")
-  (plist-put minuet-openai-compatible-options :model "qwen/qwen3-coder")
+  (plist-put minuet-openai-compatible-options :model "mistralai/codestral-2508")
+  ;; (plist-put minuet-openai-compatible-options :model "qwen/qwen3-coder")
+  ;; (plist-put minuet-openai-compatible-options :model "google/gemini-3-flash-preview")
+  ;; (plist-put minuet-openai-compatible-options :model "z-ai/glm-4.7")
 
   ;; Prioritize throughput for faster completion
   (minuet-set-optional-options minuet-openai-compatible-options :provider '(:sort "throughput"))
