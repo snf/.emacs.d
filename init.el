@@ -67,6 +67,8 @@
   (add-to-list 'project-switch-commands '(magit-project-status "Magit") t)
   (add-to-list 'project-switch-commands '(project-switch-to-buffer "Buffer") t)
   (add-to-list 'project-switch-commands '(treemacs-display-current-project-exclusively "Treemacs") t)
+  (add-to-list 'project-switch-commands '(opencode-in-project "OpenCode") t)
+  (add-to-list 'project-switch-commands '(vterm-in-project "Vterm") t)
 
   ;; XXX_ in Emacs 29 can be updated to	https://grtcdr.tn/posts/2023-03-01.html
   ;; (setq project-vc-extra-root-markers '("Cargo.toml" ".git" ".project" "Move.toml"))
