@@ -56,6 +56,7 @@
 
 ;; === packages ===
 (use-package project
+  :after vterm
   :bind (:map project-prefix-map
               ("m" . magit-project-status)
               ("o" . opencode-in-project)
