@@ -59,6 +59,7 @@
   :after vterm
   :bind (:map project-prefix-map
               ("m" . magit-project-status)
+              ("c" . codex-in-project)
               ("o" . opencode-in-project)
               ("v" . vterm-in-project)
               )
@@ -68,6 +69,7 @@
   (add-to-list 'project-switch-commands '(magit-project-status "Magit") t)
   (add-to-list 'project-switch-commands '(project-switch-to-buffer "Buffer") t)
   (add-to-list 'project-switch-commands '(treemacs-display-current-project-exclusively "Treemacs") t)
+  (add-to-list 'project-switch-commands '(codex-in-project "Codex") t)
   (add-to-list 'project-switch-commands '(opencode-in-project "OpenCode") t)
   (add-to-list 'project-switch-commands '(vterm-in-project "Vterm") t)
 
@@ -520,14 +522,17 @@
   )
 
 (use-package vterm
-  :commands (opencode-in-project vterm-in-project)
+  :commands (codex-in-project opencode-in-project vterm-in-project)
   :if (not (string= window-system 'w32))
   :bind
   (:map vterm-mode-map
         ("M-y" . vterm-yank-pop)
+        ("C-c l" . vterm-copy-mode)
 	)
   (:map vterm-copy-mode-map
 	("q" . vterm-copy-mode))
+  :custom
+  (vterm-max-scrollback 10000)
   :config
   (defun run-in-vterm-kill (process event)
     "A process sentinel. Kills PROCESS's buffer if it is live."
@@ -564,16 +569,29 @@ shell exits, the buffer is killed."
       (vterm-send-string command)
       (vterm-send-return)))
 
+  (defun run-command-in-project (command &optional buffer-label)
+    "Open vterm in the project root and execute COMMAND.
+
+BUFFER-LABEL controls the vterm buffer name and defaults to COMMAND."
+    (let* ((pr (project-current))
+           (project-root (if pr (project-root pr) default-directory))
+           (default-directory project-root)
+           (label (or buffer-label command))
+           (project-name (file-name-nondirectory (directory-file-name project-root))))
+      (with-current-buffer (vterm (format "*%s: %s*" label project-name))
+        (set-process-sentinel vterm--process #'run-in-vterm-kill)
+        (vterm-send-string command)
+        (vterm-send-return))))
+
   (defun opencode-in-project ()
     "Open vterm in the project root and execute opencode."
     (interactive)
-    (let* ((pr (project-current))
-           (project-root (if pr (project-root pr) default-directory))
-           (default-directory project-root))
-      (with-current-buffer (vterm (concat "*opencode: " (file-name-nondirectory (directory-file-name project-root)) "*"))
-        (set-process-sentinel vterm--process #'run-in-vterm-kill)
-        (vterm-send-string "opencode")
-        (vterm-send-return))))
+    (run-command-in-project "opencode" "opencode"))
+
+  (defun codex-in-project ()
+    "Open vterm in the project root and execute codex."
+    (interactive)
+    (run-command-in-project "codex" "codex"))
 
   (defun vterm-in-project ()
     "Open vterm in the project root."
