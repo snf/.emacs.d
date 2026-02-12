@@ -581,7 +581,8 @@ BUFFER-LABEL controls the vterm buffer name and defaults to COMMAND."
       (with-current-buffer (vterm (format "*%s: %s*" label project-name))
         (set-process-sentinel vterm--process #'run-in-vterm-kill)
         (vterm-send-string command)
-        (vterm-send-return))))
+        (vterm-send-return)
+        (current-buffer))))
 
   (defun opencode-in-project ()
     "Open vterm in the project root and execute opencode."
@@ -591,7 +592,10 @@ BUFFER-LABEL controls the vterm buffer name and defaults to COMMAND."
   (defun codex-in-project ()
     "Open vterm in the project root and execute codex."
     (interactive)
-    (run-command-in-project "codex" "codex"))
+    (let ((buf (run-command-in-project "codex" "codex")))
+      (when (and (buffer-live-p buf)
+                 (fboundp 'codex-attn--queue-push))
+        (codex-attn--queue-push buf))))
 
   (defun vterm-in-project ()
     "Open vterm in the project root."
@@ -1668,3 +1672,14 @@ See `find-name-arg' to customize the arguments."
                      gcs-done)))
 (put 'list-timers 'disabled nil)
 (put 'upcase-region 'disabled nil)
+
+(server-start)
+
+
+(add-to-list 'load-path (expand-file-name "lisp" user-emacs-directory))
+(use-package codex-attn
+  :straight nil
+  :ensure nil
+  :defer nil
+  :config
+  (codex-attn-mode 1))
