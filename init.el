@@ -587,15 +587,18 @@ BUFFER-LABEL controls the vterm buffer name and defaults to COMMAND."
   (defun opencode-in-project ()
     "Open vterm in the project root and execute opencode."
     (interactive)
-    (run-command-in-project "opencode" "opencode"))
+    (let ((buf (run-command-in-project "opencode" "opencode")))
+      (when (and (buffer-live-p buf)
+                 (fboundp 'codex-attn-queue-buffer))
+        (codex-attn-queue-buffer buf 'opencode))))
 
   (defun codex-in-project ()
     "Open vterm in the project root and execute codex."
     (interactive)
     (let ((buf (run-command-in-project "codex" "codex")))
       (when (and (buffer-live-p buf)
-                 (fboundp 'codex-attn--queue-push))
-        (codex-attn--queue-push buf))))
+                 (fboundp 'codex-attn-queue-buffer))
+        (codex-attn-queue-buffer buf 'codex))))
 
   (defun vterm-in-project ()
     "Open vterm in the project root."
