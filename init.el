@@ -1679,10 +1679,11 @@ See `find-name-arg' to customize the arguments."
 (server-start)
 
 
-(add-to-list 'load-path (expand-file-name "lisp" user-emacs-directory))
 (use-package codex-attn
   :straight nil
   :ensure nil
+  :load-path "lisp"
   :defer nil
+  :bind (("C-x C-a" . codex-attn-jump-most-recent))
   :config
   (codex-attn-mode 1))
