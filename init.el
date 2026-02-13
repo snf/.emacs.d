@@ -72,6 +72,8 @@
   (add-to-list 'project-switch-commands '(codex-in-project "Codex") t)
   (add-to-list 'project-switch-commands '(opencode-in-project "OpenCode") t)
   (add-to-list 'project-switch-commands '(vterm-in-project "Vterm") t)
+  ;; Include vterm buffers (e.g. codex/opencode) in `project-kill-buffers`.
+  ;; (add-to-list 'project-kill-buffer-conditions '(derived-mode . vterm-mode) t)
 
   ;; XXX_ in Emacs 29 can be updated to	https://grtcdr.tn/posts/2023-03-01.html
   ;; (setq project-vc-extra-root-markers '("Cargo.toml" ".git" ".project" "Move.toml"))
