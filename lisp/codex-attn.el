@@ -60,6 +60,7 @@ Each entry is:
 (defvar codex-attn--pending-sessions nil)
 (defvar codex-attn--thread->buffer (make-hash-table :test 'equal))
 (defvar codex-attn--pending-buffer-queue nil)
+(defvar codex-attn--snoozed-until (make-hash-table :test 'equal))
 (defvar codex-attn--watches nil)
 (defvar codex-attn--poll-timer nil)
 (defvar codex-attn--blink-timer nil)
@@ -71,6 +72,7 @@ Each entry is:
     map))
 
 (defconst codex-attn--modeline-entry '(:eval (codex-attn--modeline)))
+(defvar codex-attn-mode)
 
 (defun codex-attn--provider-symbol (provider)
   (cond
@@ -271,6 +273,24 @@ PROVIDER is optional and inferred from BUFFER when omitted."
 (defun codex-attn--session-cwd (session)
   (plist-get session :cwd))
 
+(defun codex-attn--session-key (session)
+  (or (plist-get session :file)
+      (codex-attn--thread-key
+       (codex-attn--session-provider session)
+       (codex-attn--session-thread-id session))))
+
+(defun codex-attn--session-has-associated-buffer-p (session)
+  (let* ((provider (codex-attn--session-provider session))
+         (thread-id (codex-attn--session-thread-id session))
+         (cwd (codex-attn--session-cwd session))
+         (mapped (and thread-id (codex-attn--buffer-for-thread provider thread-id))))
+    (or (buffer-live-p mapped)
+        (and (stringp cwd)
+             (consp (codex-attn--buffers-for-cwd provider cwd))))))
+
+(defun codex-attn--actionable-sessions (sessions)
+  (seq-filter #'codex-attn--session-has-associated-buffer-p sessions))
+
 (defun codex-attn--session-targets-buffer-p (session buf)
   (let* ((provider (codex-attn--session-provider session))
          (thread-id (codex-attn--session-thread-id session))
@@ -289,13 +309,14 @@ PROVIDER is optional and inferred from BUFFER when omitted."
      (t nil))))
 
 (defun codex-attn--visible-pending-sessions ()
-  (let ((buf (codex-attn--current-attn-buffer)))
+  (let* ((buf (codex-attn--current-attn-buffer))
+         (sessions (codex-attn--actionable-sessions codex-attn--pending-sessions)))
     (if (not (buffer-live-p buf))
-        codex-attn--pending-sessions
+        sessions
       (seq-remove
        (lambda (session)
          (codex-attn--session-targets-buffer-p session buf))
-       codex-attn--pending-sessions))))
+       sessions))))
 
 (defun codex-attn--ack-visible-sessions ()
   (let ((buf (codex-attn--current-attn-buffer))
@@ -428,14 +449,37 @@ PROVIDER is optional and inferred from BUFFER when omitted."
                             sessions)))
     sessions))
 
+(defun codex-attn--filter-snoozed-sessions (sessions)
+  (let ((now (float-time))
+        (active (make-hash-table :test 'equal))
+        visible)
+    (dolist (session sessions)
+      (let* ((key (codex-attn--session-key session))
+             (until (and key (gethash key codex-attn--snoozed-until))))
+        (when key
+          (puthash key t active))
+        (if (and (numberp until) (> until now))
+            nil
+          (when key
+            (remhash key codex-attn--snoozed-until))
+          (push session visible))))
+    (maphash
+     (lambda (key _until)
+       (unless (gethash key active)
+         (remhash key codex-attn--snoozed-until)))
+     codex-attn--snoozed-until)
+    (nreverse visible)))
+
 (defun codex-attn--refresh ()
-  (setq codex-attn--pending-sessions (codex-attn--read-state-dir))
+  (setq codex-attn--pending-sessions
+        (codex-attn--filter-snoozed-sessions (codex-attn--read-state-dir)))
   (codex-attn--prune-buffer-queue)
   (codex-attn--prune-thread-map)
   (codex-attn--auto-bind)
   ;; If the user is already in the target provider buffer, auto-ack.
   (when (codex-attn--ack-visible-sessions)
-    (setq codex-attn--pending-sessions (codex-attn--read-state-dir))
+    (setq codex-attn--pending-sessions
+          (codex-attn--filter-snoozed-sessions (codex-attn--read-state-dir)))
     (codex-attn--prune-thread-map)
     (codex-attn--auto-bind))
   (if (codex-attn--visible-pending-sessions)
@@ -549,7 +593,7 @@ PROVIDER is optional and inferred from BUFFER when omitted."
 
 (defun codex-attn-pending-sessions (&optional order)
   "Return pending sessions as plists.
-ORDER can be 'fifo or 'recent."
+ORDER can be `fifo` or `recent`."
   (codex-attn--refresh)
   (let ((sessions codex-attn--pending-sessions))
     (pcase order
@@ -576,6 +620,45 @@ ORDER can be 'fifo or 'recent."
     (when (and file (file-exists-p file))
       (delete-file file)))
   (codex-attn--refresh))
+
+(defun codex-attn-clear-pending ()
+  "Delete all pending session state files."
+  (interactive)
+  (let ((count 0))
+    (dolist (session (codex-attn--read-state-dir))
+      (let ((file (plist-get session :file)))
+        (when (and file (file-exists-p file))
+          (delete-file file)
+          (setq count (1+ count)))))
+    (clrhash codex-attn--snoozed-until)
+    (codex-attn--refresh)
+    (message "codex-attn: cleared %d pending session%s."
+             count
+             (if (= count 1) "" "s"))))
+
+(defun codex-attn-snooze-pending (minutes)
+  "Snooze all currently pending sessions for MINUTES."
+  (interactive (list (read-number "codex-attn snooze minutes: " 10)))
+  (let* ((mins (max 0 minutes))
+         (until (+ (float-time) (* mins 60)))
+         (sessions (codex-attn--read-state-dir))
+         (count 0))
+    (if (= mins 0)
+        (progn
+          (clrhash codex-attn--snoozed-until)
+          (codex-attn--refresh)
+          (message "codex-attn: cleared all snoozes."))
+      (dolist (session sessions)
+        (let ((key (codex-attn--session-key session)))
+          (when key
+            (puthash key until codex-attn--snoozed-until)
+            (setq count (1+ count)))))
+      (codex-attn--refresh)
+      (message "codex-attn: snoozed %d pending session%s for %d minute%s."
+               count
+               (if (= count 1) "" "s")
+               mins
+               (if (= mins 1) "" "s")))))
 
 (defun codex-attn--jump-to-session (session)
   (let* ((provider (codex-attn--session-provider session))
@@ -640,12 +723,14 @@ ORDER can be 'fifo or 'recent."
                    :watch-count (length codex-attn--watches)
                    :poll-active (and codex-attn--poll-timer t)
                    :pending-count (length codex-attn--pending-sessions)
+                   :snoozed-count (hash-table-count codex-attn--snoozed-until)
                    :queue-count (length codex-attn--pending-buffer-queue)
                    :mappings mappings)))
-      (message "codex-attn status: watches=%d poll=%s pending=%d queue=%d mapped=%d"
+      (message "codex-attn status: watches=%d poll=%s pending=%d snoozed=%d queue=%d mapped=%d"
                (length codex-attn--watches)
                (if codex-attn--poll-timer "on" "off")
                (length codex-attn--pending-sessions)
+               (hash-table-count codex-attn--snoozed-until)
                (length codex-attn--pending-buffer-queue)
                (length mappings))
       status)))
