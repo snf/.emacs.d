@@ -123,12 +123,19 @@ Each entry is:
     (with-current-buffer buf
       (when (derived-mode-p 'vterm-mode)
         (let ((name (buffer-name buf))
-              found)
+              found
+              found-prefix-len)
           (dolist (entry codex-attn-providers found)
             (let ((provider (car entry))
                   (prefix (plist-get (cdr entry) :buffer-prefix)))
               (when (and (stringp prefix) (string-prefix-p prefix name))
-                (setq found provider)))))))))
+                (let ((prefix-len (length prefix)))
+                  ;; Prefer the longest matching prefix so subset prefixes
+                  ;; do not steal buffers from more specific providers.
+                  (when (or (null found-prefix-len)
+                            (> prefix-len found-prefix-len))
+                    (setq found provider)
+                    (setq found-prefix-len prefix-len)))))))))))
 
 (defun codex-attn--provider-vterm-buffer-p (buf provider)
   (and (buffer-live-p buf)
@@ -301,11 +308,37 @@ PROVIDER is optional and inferred from BUFFER when omitted."
      ((eq mapped buf) t)
      ((and cwd (stringp cwd))
       (let ((candidates (codex-attn--buffers-for-cwd provider cwd)))
-        (when (and (= (length candidates) 1)
-                   (eq (car candidates) buf))
+        (cond
+         ((and (= (length candidates) 1)
+               (eq (car candidates) buf))
           (when (and thread-id (not mapped))
             (codex-attn--put-thread-buffer provider thread-id buf))
-          t)))
+          t)
+         ((and (memq buf candidates)
+               thread-id
+               (not mapped))
+          (let* ((normalized-cwd (codex-attn--normalize-dir cwd))
+                 (peer-count
+                  (length
+                   (seq-filter
+                    (lambda (other)
+                      (let* ((other-provider (codex-attn--session-provider other))
+                             (other-thread-id (codex-attn--session-thread-id other))
+                             (other-cwd (codex-attn--session-cwd other))
+                             (other-mapped (and other-thread-id
+                                                (codex-attn--buffer-for-thread
+                                                 other-provider other-thread-id))))
+                        (and (eq other-provider provider)
+                             (stringp other-cwd)
+                             (equal (codex-attn--normalize-dir other-cwd) normalized-cwd)
+                             (not (buffer-live-p other-mapped)))))
+                    codex-attn--pending-sessions))))
+            ;; If there's only one unresolved session for this provider/cwd,
+            ;; treat the selected candidate as its target.
+            (when (= peer-count 1)
+              (codex-attn--put-thread-buffer provider thread-id buf)
+              t)))
+         (t nil))))
      (t nil))))
 
 (defun codex-attn--visible-pending-sessions ()
