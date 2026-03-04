@@ -472,10 +472,43 @@
   ("C-=" . er/expand-region)
   ("C--" . er/contract-region)
   )
+
 (use-package magit
   :custom
   (show-trailing-whitespace nil)
   )
+
+(use-package magit-delta
+  :straight (magit-delta :type git :host github :repo "dandavison/magit-delta")
+  :hook ((magit-mode . magit-delta-mode)
+         (magit-diff-mode . my/magit-diff-buffer-use-github-dark)
+         (magit-revision-mode . my/magit-diff-buffer-use-github-dark))
+  :custom
+  (magit-delta-default-light-theme "GitHub")
+  (magit-delta-default-dark-theme "OneHalfDark")
+  :config
+  (setq magit-delta-delta-args
+        (list "--max-line-distance" "0.6"
+              "--true-color" (if xterm-color--support-truecolor "always" "never")
+              "--color-only"
+              "--plus-style" "syntax #033a16"
+              "--plus-emph-style" "syntax bold #055d20"
+              "--minus-style" "syntax #67060c"
+              "--minus-emph-style" "syntax bold #8e1519"
+              "--hunk-header-style" "syntax bold"
+              "--file-style" "bold #8b949e"))
+
+  (defvar-local my/magit-diff-buffer-github-dark-cookie nil)
+
+  (defun my/magit-diff-buffer-use-github-dark ()
+    "Apply GitHub Dark background to Magit diff/revision buffers only."
+    (unless my/magit-diff-buffer-github-dark-cookie
+      (setq-local my/magit-diff-buffer-github-dark-cookie
+                  (face-remap-add-relative
+                   'default
+                   :foreground "#f0f6fc"
+                   :background "#0d1117")))))
+
 (use-package git-link
   :straight (git-link :type git :host github :repo "sshaw/git-link")
   )
