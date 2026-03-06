@@ -604,6 +604,34 @@ shell exits, the buffer is killed."
       (vterm-send-string command)
       (vterm-send-return)))
 
+  (defun my/export-ai-editor-environment (&optional command)
+    "Export EDITOR/VISUAL for Emacs subprocesses and new vterm sessions."
+    (let ((cmd (or command my/ai-editor-command)))
+      (setenv "EDITOR" cmd)
+      (setenv "VISUAL" cmd)
+      ;; Ensure vterm gets these values even if shell init files overwrite them.
+      (setq vterm-environment
+            (append
+             (list (format "EDITOR=%s" cmd)
+                   (format "VISUAL=%s" cmd))
+             (seq-remove (lambda (entry)
+                           (or (string-prefix-p "EDITOR=" entry)
+                               (string-prefix-p "VISUAL=" entry)))
+                         vterm-environment)))))
+
+  (defun my/set-ai-editor-command (symbol value)
+    "Set SYMBOL to VALUE and export it as EDITOR/VISUAL."
+    (set-default symbol value)
+    (my/export-ai-editor-environment value))
+
+  (defcustom my/ai-editor-command "emacsclient --reuse-frame"
+    "Editor command exported to Emacs subprocesses."
+    :type 'string
+    :set #'my/set-ai-editor-command
+    :group 'vterm)
+
+  (my/export-ai-editor-environment)
+
   (defun run-command-in-project (command &optional buffer-label)
     "Open vterm in the project root and execute COMMAND.
 
