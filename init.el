@@ -509,9 +509,14 @@
                    :foreground "#f0f6fc"
                    :background "#0d1117")))))
 
+(use-package code-review
+  :straight (code-review :type git :host github :repo "doomelpa/code-review")
+  )
+
 (use-package git-link
   :straight (git-link :type git :host github :repo "sshaw/git-link")
   )
+
 (use-package git-timemachine)
 (use-package multiple-cursors
   :config
