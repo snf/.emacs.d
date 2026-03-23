@@ -1131,6 +1131,11 @@ results."
   :straight (boogie-friends :type git :host github :repo "boogie-org/boogie-friends")
   )
 
+(use-package csv-mode
+  :straight (csv-mode :type git :host github :repo "emacsmirror/csv-mode")
+  )
+
+
 ;; tools
 ;; ai
 (load-file "~/.emacs.d/secret.el")
