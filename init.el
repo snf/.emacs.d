@@ -921,6 +921,7 @@ results."
 (use-package hcl-mode
   :straight (:host github :repo "purcell/emacs-hcl-mode" :branch "master")
   )
+
 (use-package markdown-mode
   :bind (:map markdown-mode-map
 	      ("C-c <down>" . nil)
@@ -929,6 +930,42 @@ results."
 	      ("C-c <right>" . nil)
 	      )
   )
+
+(use-package valign
+  :straight (:host github :repo "casouri/valign" :branch "master")
+  ;; :hook
+  ;; (org-mode . valign-mode)
+  ;; (markdown-mode . valign-mode)
+  )
+
+
+(use-package markdown-table-wrap
+  :straight (:host github :repo "dnouri/markdown-table-wrap" :branch "main")
+  ;; :custom
+  ;; ;; Measure widths from visible text only (for markdown-hide-markup)
+  ;; (markdown-table-wrap table-text 60 nil t)
+  ;; ;; :hook
+  ;; ;; (markdown-mode . )
+  ;; :init
+  ;; (defun my-wrap-table-at-point ()
+  ;; "Wrap the pipe table at point to fit the window."
+  ;; (interactive)
+  ;; (save-excursion
+  ;;   (let* ((beg (progn (re-search-backward "^|" nil t)
+  ;;                      (line-beginning-position)))
+  ;;          (end (progn (re-search-forward "^[^|]" nil t)
+  ;;                      (line-beginning-position)))
+  ;;          (text (buffer-substring-no-properties beg (1- end)))
+  ;;          (wrapped (markdown-table-wrap
+  ;;                    text (window-width)
+  ;;                    nil                     ; max cell height
+  ;;                    markdown-hide-markup))) ; t when markup hidden
+  ;;     (unless (equal wrapped text)
+  ;;       (delete-region beg (1- end))
+  ;;       (goto-char beg)
+  ;;       (insert wrapped)))))
+  )
+
 (use-package opencl-mode
   :mode "\\.cl\\'"
   )
