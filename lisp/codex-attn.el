@@ -314,30 +314,6 @@ PROVIDER is optional and inferred from BUFFER when omitted."
           (when (and thread-id (not mapped))
             (codex-attn--put-thread-buffer provider thread-id buf))
           t)
-         ((and (memq buf candidates)
-               thread-id
-               (not mapped))
-          (let* ((normalized-cwd (codex-attn--normalize-dir cwd))
-                 (peer-count
-                  (length
-                   (seq-filter
-                    (lambda (other)
-                      (let* ((other-provider (codex-attn--session-provider other))
-                             (other-thread-id (codex-attn--session-thread-id other))
-                             (other-cwd (codex-attn--session-cwd other))
-                             (other-mapped (and other-thread-id
-                                                (codex-attn--buffer-for-thread
-                                                 other-provider other-thread-id))))
-                        (and (eq other-provider provider)
-                             (stringp other-cwd)
-                             (equal (codex-attn--normalize-dir other-cwd) normalized-cwd)
-                             (not (buffer-live-p other-mapped)))))
-                    codex-attn--pending-sessions))))
-            ;; If there's only one unresolved session for this provider/cwd,
-            ;; treat the selected candidate as its target.
-            (when (= peer-count 1)
-              (codex-attn--put-thread-buffer provider thread-id buf)
-              t)))
          (t nil))))
      (t nil))))
 
