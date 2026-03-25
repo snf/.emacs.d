@@ -294,7 +294,7 @@ PROVIDER is optional and inferred from BUFFER when omitted."
          (mapped (and thread-id (codex-attn--buffer-for-thread provider thread-id))))
     (or (buffer-live-p mapped)
         (and (stringp cwd)
-             (consp (codex-attn--buffers-for-cwd provider cwd))))))
+             (buffer-live-p (codex-attn--find-vterm-by-cwd provider cwd))))))
 
 (defun codex-attn--actionable-sessions (sessions)
   (seq-filter #'codex-attn--session-has-associated-buffer-p sessions))

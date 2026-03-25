@@ -65,6 +65,20 @@ Each item in SPECS is (SYMBOL NAME CWD).  SYMBOL is bound to the new buffer."
         (should (memq buf1 (codex-attn--buffers-for-cwd 'codex "/tmp/codex-attn-test/")))
         (should (memq buf2 (codex-attn--buffers-for-cwd 'codex "/tmp/codex-attn-test/")))))))
 
+(ert-deftest codex-attn-ambiguous-cwd-is-not-actionable-without-mapping ()
+  (codex-attn-test--with-buffers
+      ((buf1 "*codex: repo*" "/tmp/codex-attn-test/")
+       (buf2 "*codex: repo*" "/tmp/codex-attn-test/"))
+    (let ((codex-attn--pending-sessions nil)
+          (codex-attn--thread->buffer (make-hash-table :test 'equal)))
+      (let ((session (list :provider 'codex :thread_id "thread-1" :cwd "/tmp/codex-attn-test/")))
+        (setq codex-attn--pending-sessions (list session))
+        (should-not (codex-attn--session-has-associated-buffer-p session))
+        (codex-attn--put-thread-buffer 'codex "thread-1" buf1)
+        (should (codex-attn--session-has-associated-buffer-p session))
+        (should (eq (codex-attn--buffer-for-thread 'codex "thread-1") buf1))
+        (should (buffer-live-p buf2))))))
+
 (provide 'codex-attn-tests)
 
 ;;; codex-attn-tests.el ends here
