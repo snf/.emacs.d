@@ -65,6 +65,7 @@ Each entry is:
 (defvar codex-attn--poll-timer nil)
 (defvar codex-attn--blink-timer nil)
 (defvar codex-attn--blink-on nil)
+(defvar codex-attn--visible-pending nil)
 
 (defvar codex-attn--modeline-map
   (let ((map (make-sparse-keymap)))
@@ -491,7 +492,8 @@ PROVIDER is optional and inferred from BUFFER when omitted."
           (codex-attn--filter-snoozed-sessions (codex-attn--read-state-dir)))
     (codex-attn--prune-thread-map)
     (codex-attn--auto-bind))
-  (if (codex-attn--visible-pending-sessions)
+  (setq codex-attn--visible-pending (consp (codex-attn--visible-pending-sessions)))
+  (if codex-attn--visible-pending
       (codex-attn--start-blink)
     (codex-attn--stop-blink))
   (force-mode-line-update t))
@@ -555,7 +557,7 @@ PROVIDER is optional and inferred from BUFFER when omitted."
   (setq codex-attn--blink-on nil))
 
 (defun codex-attn--modeline ()
-  (when (codex-attn--visible-pending-sessions)
+  (when codex-attn--visible-pending
     (propertize (format " %s " codex-attn-modeline-text)
                 'face (if codex-attn--blink-on
                           'codex-attn-modeline-alert-face
@@ -568,6 +570,7 @@ PROVIDER is optional and inferred from BUFFER when omitted."
   (when codex-attn-mode
     (when (codex-attn--ack-visible-sessions)
       (codex-attn--refresh))
+    (setq codex-attn--visible-pending (consp (codex-attn--visible-pending-sessions)))
     (force-mode-line-update t)))
 
 (defun codex-attn--session-pending-since (session)
@@ -757,6 +760,7 @@ ORDER can be `fifo` or `recent`."
     (remove-hook 'window-buffer-change-functions #'codex-attn--on-buffer-visibility-change)
     (codex-attn--stop-watch)
     (codex-attn--stop-blink)
+    (setq codex-attn--visible-pending nil)
     (setq global-mode-string (delq codex-attn--modeline-entry global-mode-string))
     (force-mode-line-update t)))
 
