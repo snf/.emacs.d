@@ -480,9 +480,11 @@
 
 (use-package magit-delta
   :straight (magit-delta :type git :host github :repo "dandavison/magit-delta")
-  :hook ((magit-mode . magit-delta-mode)
-         (magit-diff-mode . my/magit-diff-buffer-use-github-dark)
-         (magit-revision-mode . my/magit-diff-buffer-use-github-dark))
+  :hook (
+         ;; (magit-mode . magit-delta-mode)
+         ;; (magit-diff-mode . my/magit-diff-buffer-use-github-dark)
+         ;; (magit-revision-mode . my/magit-diff-buffer-use-github-dark)
+         )
   :custom
   (magit-delta-default-light-theme "GitHub")
   (magit-delta-default-dark-theme "OneHalfDark")
