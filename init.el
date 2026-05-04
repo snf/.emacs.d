@@ -1801,3 +1801,10 @@ See `find-name-arg' to customize the arguments."
   :bind (("C-x C-a" . codex-attn-jump-most-recent))
   :config
   (codex-attn-mode 1))
+
+(use-package codex-history
+  :straight nil
+  :ensure nil
+  :load-path "lisp"
+  :commands (codex-history-insert-prompt)
+  :bind (("C-x C-p" . codex-history-insert-prompt)))
