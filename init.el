@@ -564,6 +564,7 @@
   )
 
 (use-package vterm
+  :straight (vterm :type git :host github :repo "akermu/emacs-libvterm")
   :commands (codex-in-project opencode-in-project vterm-in-project)
   :if (not (string= window-system 'w32))
   :bind
