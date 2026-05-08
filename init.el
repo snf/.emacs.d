@@ -1808,3 +1808,11 @@ See `find-name-arg' to customize the arguments."
   :load-path "lisp"
   :commands (codex-history-insert-prompt)
   :bind (("C-x C-p" . codex-history-insert-prompt)))
+
+(use-package emacs-defunct-cleaner
+  :straight nil
+  :ensure nil
+  :load-path "lisp"
+  :defer nil
+  :config
+  (emacs-defunct-cleaner-mode 1))
