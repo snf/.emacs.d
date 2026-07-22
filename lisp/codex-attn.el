@@ -122,7 +122,8 @@ Each entry is:
 (defun codex-attn--buffer-provider (buf)
   (when (buffer-live-p buf)
     (with-current-buffer buf
-      (when (derived-mode-p 'vterm-mode)
+      ;; Previous terminal backend: (derived-mode-p 'vterm-mode)
+      (when (derived-mode-p 'ghostel-mode)
         (let ((name (buffer-name buf))
               found
               found-prefix-len)
@@ -138,15 +139,18 @@ Each entry is:
                     (setq found provider)
                     (setq found-prefix-len prefix-len)))))))))))
 
-(defun codex-attn--provider-vterm-buffer-p (buf provider)
+(defun codex-attn--provider-terminal-buffer-p (buf provider)
   (and (buffer-live-p buf)
        (eq (codex-attn--buffer-provider buf) (codex-attn--provider-symbol provider))))
 
-(defun codex-attn--codex-vterm-buffer-p (buf)
-  "Compatibility helper for callers expecting codex-only predicate."
-  (codex-attn--provider-vterm-buffer-p buf 'codex))
+;; Previous VTerm-specific compatibility helpers:
+;; (defalias 'codex-attn--provider-vterm-buffer-p
+;;   #'codex-attn--provider-terminal-buffer-p)
+;; (defun codex-attn--codex-vterm-buffer-p (buf)
+;;   "Compatibility helper for callers expecting codex-only predicate."
+;;   (codex-attn--provider-vterm-buffer-p buf 'codex))
 
-(defun codex-attn--vterm-buffers (&optional provider)
+(defun codex-attn--terminal-buffers (&optional provider)
   (let* ((target (codex-attn--provider-symbol provider))
          out)
     (dolist (buf (buffer-list))
@@ -156,22 +160,28 @@ Each entry is:
           (push buf out))))
     (nreverse out)))
 
+;; (defalias 'codex-attn--vterm-buffers #'codex-attn--terminal-buffers)
+
 (defun codex-attn--buffers-for-cwd (provider cwd)
   (let* ((target-provider (codex-attn--provider-symbol provider))
          (target-cwd (codex-attn--normalize-dir cwd))
          candidates)
     (when (and target-provider target-cwd)
-      (dolist (buf (codex-attn--vterm-buffers target-provider))
+      ;; (dolist (buf (codex-attn--vterm-buffers target-provider))
+      (dolist (buf (codex-attn--terminal-buffers target-provider))
         (with-current-buffer buf
           (let ((buf-cwd (codex-attn--normalize-dir default-directory)))
             (when (and buf-cwd (string= target-cwd buf-cwd))
               (push buf candidates))))))
     (nreverse candidates)))
 
-(defun codex-attn--find-vterm-by-cwd (provider cwd)
+(defun codex-attn--find-terminal-by-cwd (provider cwd)
   (let ((candidates (codex-attn--buffers-for-cwd provider cwd)))
     (when (= (length candidates) 1)
       (car candidates))))
+
+;; (defalias 'codex-attn--find-vterm-by-cwd
+;;   #'codex-attn--find-terminal-by-cwd)
 
 (defun codex-attn--queue-push (buf &optional provider)
   "Queue BUF as a candidate for the next thread binding.
@@ -218,7 +228,8 @@ PROVIDER is optional and inferred from BUFFER when omitted."
                          (numberp ts)
                          (<= (- now ts) codex-attn-queue-ttl)
                          buf-provider
-                         (codex-attn--provider-vterm-buffer-p buf buf-provider))))
+                         ;; (codex-attn--provider-vterm-buffer-p buf buf-provider)
+                         (codex-attn--provider-terminal-buffer-p buf buf-provider))))
         (when valid
           (if (and (not found)
                    (or (null target-provider)
@@ -238,7 +249,8 @@ PROVIDER is optional and inferred from BUFFER when omitted."
           (codex-attn--queue-push buf provider)
           (message "codex-attn: registered %s for provider %s."
                    (buffer-name buf) provider))
-      (message "codex-attn: current buffer is not a tracked provider vterm."))))
+      ;; (message "codex-attn: current buffer is not a tracked provider vterm.")
+      (message "codex-attn: current buffer is not a tracked provider terminal."))))
 
 (defun codex-attn--thread-key (provider thread-id)
   (when (and provider thread-id)
@@ -294,7 +306,8 @@ PROVIDER is optional and inferred from BUFFER when omitted."
          (mapped (and thread-id (codex-attn--buffer-for-thread provider thread-id))))
     (or (buffer-live-p mapped)
         (and (stringp cwd)
-             (buffer-live-p (codex-attn--find-vterm-by-cwd provider cwd))))))
+             ;; (buffer-live-p (codex-attn--find-vterm-by-cwd provider cwd))
+             (buffer-live-p (codex-attn--find-terminal-by-cwd provider cwd))))))
 
 (defun codex-attn--actionable-sessions (sessions)
   (seq-filter #'codex-attn--session-has-associated-buffer-p sessions))
@@ -345,7 +358,8 @@ PROVIDER is optional and inferred from BUFFER when omitted."
          (thread-id (codex-attn--session-thread-id session))
          (cwd (codex-attn--session-cwd session)))
     (when (and provider thread-id (not (codex-attn--buffer-for-thread provider thread-id)))
-      (let ((buf (or (codex-attn--find-vterm-by-cwd provider cwd)
+      ;; (let ((buf (or (codex-attn--find-vterm-by-cwd provider cwd)
+      (let ((buf (or (codex-attn--find-terminal-by-cwd provider cwd)
                      (codex-attn--queue-pop provider))))
         (when (buffer-live-p buf)
           (codex-attn--put-thread-buffer provider thread-id buf))))))
@@ -378,7 +392,8 @@ PROVIDER is optional and inferred from BUFFER when omitted."
                     (ts (plist-get entry :ts)))
                (and (buffer-live-p buf)
                     provider
-                    (codex-attn--provider-vterm-buffer-p buf provider)
+                    ;; (codex-attn--provider-vterm-buffer-p buf provider)
+                    (codex-attn--provider-terminal-buffer-p buf provider)
                     (numberp ts)
                     (<= (- now ts) codex-attn-queue-ttl))))
            codex-attn--pending-buffer-queue))))

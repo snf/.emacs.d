@@ -8,7 +8,8 @@
 (require 'json)
 (require 'subr-x)
 
-(declare-function vterm-send-string "vterm" (string &optional paste-p))
+;; (declare-function vterm-send-string "vterm" (string &optional paste-p))
+(declare-function ghostel-send-string "ghostel" (string))
 (declare-function comint-send-string "comint" (process string))
 (declare-function term-send-raw-string "term" (string))
 (declare-function eat-term-send-string "eat" (terminal string))
@@ -120,10 +121,14 @@ With REFRESH, reread `codex-history-file' unconditionally."
 (defun codex-history--insert-or-send (text)
   "Insert TEXT in the current buffer or send it to the terminal process."
   (cond
-   ((derived-mode-p 'vterm-mode)
-    (unless (fboundp 'vterm-send-string)
-      (user-error "vterm is not loaded"))
-    (vterm-send-string text t))
+   ;; ((derived-mode-p 'vterm-mode)
+   ;;  (unless (fboundp 'vterm-send-string)
+   ;;    (user-error "vterm is not loaded"))
+   ;;  (vterm-send-string text t))
+   ((derived-mode-p 'ghostel-mode)
+    (unless (fboundp 'ghostel-send-string)
+      (user-error "ghostel is not loaded"))
+    (ghostel-send-string text))
    ((derived-mode-p 'eat-mode)
     (unless (and (fboundp 'eat-term-send-string)
                  (bound-and-true-p eat-terminal))

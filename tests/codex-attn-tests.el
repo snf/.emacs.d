@@ -1,22 +1,26 @@
 ;;; codex-attn-tests.el --- Regression tests for codex-attn -*- lexical-binding: t; -*-
 
 ;;; Commentary:
-;; Focused tests for ambiguous same-cwd buffer matching.
+;; Focused tests for terminal and ambiguous same-cwd buffer matching.
 
 ;;; Code:
 
 (require 'ert)
 
-(unless (fboundp 'vterm-mode)
-  (define-derived-mode vterm-mode fundamental-mode "VTerm"))
+;; (unless (fboundp 'vterm-mode)
+;;   (define-derived-mode vterm-mode fundamental-mode "VTerm"))
+
+(unless (fboundp 'ghostel-mode)
+  (define-derived-mode ghostel-mode fundamental-mode "Ghostel"))
 
 (add-to-list 'load-path (expand-file-name "../lisp" (file-name-directory (or load-file-name buffer-file-name))))
 (require 'codex-attn)
 
 (defmacro codex-attn-test--with-buffers (specs &rest body)
-  "Create temporary vterm buffers described by SPECS, then run BODY.
+  "Create temporary terminal buffers described by SPECS, then run BODY.
 
-Each item in SPECS is (SYMBOL NAME CWD).  SYMBOL is bound to the new buffer."
+Each item in SPECS is (SYMBOL NAME CWD &optional MODE).  SYMBOL is bound to
+the new buffer, using `ghostel-mode' unless MODE is supplied."
   (declare (indent 1) (debug t))
   `(let (codex-attn-test--buffers)
      (unwind-protect
@@ -24,13 +28,15 @@ Each item in SPECS is (SYMBOL NAME CWD).  SYMBOL is bound to the new buffer."
                 (lambda (spec)
                   (let ((sym (nth 0 spec))
                         (name (nth 1 spec))
-                        (cwd (nth 2 spec)))
+                        (cwd (nth 2 spec))
+                        ;; (mode (or (nth 3 spec) 'vterm-mode))
+                        (mode (or (nth 3 spec) 'ghostel-mode)))
                     `(,sym
                       (let ((buf (generate-new-buffer ,name)))
                         (push buf codex-attn-test--buffers)
                         (with-current-buffer buf
                           (setq default-directory ,cwd)
-                          (vterm-mode))
+                          (,mode))
                         buf))))
                 specs)
            ,@body)
@@ -38,6 +44,18 @@ Each item in SPECS is (SYMBOL NAME CWD).  SYMBOL is bound to the new buffer."
                (when (buffer-live-p buf)
                  (kill-buffer buf)))
              codex-attn-test--buffers))))
+
+(ert-deftest codex-attn-recognizes-ghostel-buffer ()
+  (codex-attn-test--with-buffers
+      ((buf "*codex: repo*" "/tmp/codex-attn-test/" ghostel-mode))
+    (should (eq (codex-attn--buffer-provider buf) 'codex))
+    (should (codex-attn--provider-terminal-buffer-p buf 'codex))))
+
+(ert-deftest codex-attn-recognizes-opencode-ghostel-buffer ()
+  (codex-attn-test--with-buffers
+      ((buf "*opencode: repo*" "/tmp/codex-attn-test/" ghostel-mode))
+    (should (eq (codex-attn--buffer-provider buf) 'opencode))
+    (should (codex-attn--provider-terminal-buffer-p buf 'opencode))))
 
 (ert-deftest codex-attn-targets-unique-cwd-buffer ()
   (codex-attn-test--with-buffers

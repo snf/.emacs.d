@@ -56,12 +56,13 @@
 
 ;; === packages ===
 (use-package project
-  :after vterm
+  ;; :after vterm
   :bind (:map project-prefix-map
               ("m" . magit-project-status)
               ("c" . codex-in-project)
               ("o" . opencode-in-project)
-              ("v" . vterm-in-project)
+              ;; ("v" . vterm-in-project)
+              ("v" . ghostel-project)
               )
   :custom
   (vc-directory-exclusion-list '("node_modules" "memoizeFs_cache" "contract_graphs" ".git" "target"))
@@ -71,7 +72,8 @@
   (add-to-list 'project-switch-commands '(treemacs-display-current-project-exclusively "Treemacs") t)
   (add-to-list 'project-switch-commands '(codex-in-project "Codex") t)
   (add-to-list 'project-switch-commands '(opencode-in-project "OpenCode") t)
-  (add-to-list 'project-switch-commands '(vterm-in-project "Vterm") t)
+  ;; (add-to-list 'project-switch-commands '(vterm-in-project "Vterm") t)
+  (add-to-list 'project-switch-commands '(ghostel-project "Ghostel") t)
   ;; Include vterm buffers (e.g. codex/opencode) in `project-kill-buffers`.
   ;; (add-to-list 'project-kill-buffer-conditions '(derived-mode . vterm-mode) t)
 
@@ -563,123 +565,190 @@
   
   )
 
-(use-package vterm
-  :straight (vterm :type git :host github :repo "akermu/emacs-libvterm")
-  :commands (codex-in-project opencode-in-project vterm-in-project)
-  :if (not (string= window-system 'w32))
-  :bind
-  (:map vterm-mode-map
-        ("M-y" . vterm-yank-pop)
-        ("C-c l" . vterm-copy-mode)
-	)
-  (:map vterm-copy-mode-map
-	("q" . vterm-copy-mode))
-  :custom
-  (vterm-max-scrollback 10000)
+(defun my/export-ai-editor-environment (&optional command)
+  "Export EDITOR/VISUAL for Emacs subprocesses and terminal sessions."
+  (let ((cmd (or command my/ai-editor-command)))
+    (setenv "EDITOR" cmd)
+    (setenv "VISUAL" cmd)))
+
+(defun my/set-ai-editor-command (symbol value)
+  "Set SYMBOL to VALUE and export it as EDITOR/VISUAL."
+  (set-default symbol value)
+  (my/export-ai-editor-environment value))
+
+(defcustom my/ai-editor-command "emacsclient --reuse-frame"
+  "Editor command exported to Emacs subprocesses."
+  :type 'string
+  :set #'my/set-ai-editor-command
+  :group 'tools)
+
+(my/export-ai-editor-environment)
+
+(use-package ghostel
+  :straight (ghostel :type git :host github :repo "dakra/ghostel"
+                     :files (:defaults "etc" "src" "vendor" "build.zig"
+                                      "build.zig.zon" "symbols.map"))
+  :commands (ghostel ghostel-project codex-in-project opencode-in-project)
   :config
-  (defun run-in-vterm-kill (process event)
-    "A process sentinel. Kills PROCESS's buffer if it is live."
-    (let ((b (process-buffer process)))
-      (and (buffer-live-p b)
-           (kill-buffer b))))
+  (defun run-command-in-ghostel-project (command &optional buffer-label)
+    "Open Ghostel in the project root and execute COMMAND.
 
-  (defun run-in-vterm (command)
-    "Execute string COMMAND in a new vterm.
-
-Interactively, prompt for COMMAND with the current buffer's file
-name supplied. When called from Dired, supply the name of the
-file at point.
-
-Like `async-shell-command`, but run in a vterm for full terminal features.
-
-The new vterm buffer is named in the form `*foo bar.baz*`, the
-command and its arguments in earmuffs.
-
-When the command terminates, the shell remains open, but when the
-shell exits, the buffer is killed."
-    (interactive
-     (list
-      (let* ((f (cond (buffer-file-name)
-                      ((eq major-mode 'dired-mode)
-                       (dired-get-filename nil t))))
-             (filename (concat " " (shell-quote-argument (and f (file-relative-name f))))))
-	(read-shell-command "Terminal command: "
-                            (cons filename 0)
-                            (cons 'shell-command-history 1)
-                            (list filename)))))
-    (with-current-buffer (vterm (concat "*" command "*"))
-      (set-process-sentinel vterm--process #'run-in-vterm-kill)
-      (vterm-send-string command)
-      (vterm-send-return)))
-
-  (defun my/export-ai-editor-environment (&optional command)
-    "Export EDITOR/VISUAL for Emacs subprocesses and new vterm sessions."
-    (let ((cmd (or command my/ai-editor-command)))
-      (setenv "EDITOR" cmd)
-      (setenv "VISUAL" cmd)
-      ;; Ensure vterm gets these values even if shell init files overwrite them.
-      (setq vterm-environment
-            (append
-             (list (format "EDITOR=%s" cmd)
-                   (format "VISUAL=%s" cmd))
-             (seq-remove (lambda (entry)
-                           (or (string-prefix-p "EDITOR=" entry)
-                               (string-prefix-p "VISUAL=" entry)))
-                         vterm-environment)))))
-
-  (defun my/set-ai-editor-command (symbol value)
-    "Set SYMBOL to VALUE and export it as EDITOR/VISUAL."
-    (set-default symbol value)
-    (my/export-ai-editor-environment value))
-
-  (defcustom my/ai-editor-command "emacsclient --reuse-frame"
-    "Editor command exported to Emacs subprocesses."
-    :type 'string
-    :set #'my/set-ai-editor-command
-    :group 'vterm)
-
-  (my/export-ai-editor-environment)
-
-  (defun run-command-in-project (command &optional buffer-label)
-    "Open vterm in the project root and execute COMMAND.
-
-BUFFER-LABEL controls the vterm buffer name and defaults to COMMAND."
+BUFFER-LABEL controls the Ghostel buffer name and defaults to COMMAND."
     (let* ((pr (project-current))
            (project-root (if pr (project-root pr) default-directory))
            (default-directory project-root)
            (label (or buffer-label command))
-           (project-name (file-name-nondirectory (directory-file-name project-root))))
-      (with-current-buffer (vterm (format "*%s: %s*" label project-name))
-        (set-process-sentinel vterm--process #'run-in-vterm-kill)
-        (vterm-send-string command)
-        (vterm-send-return)
-        (current-buffer))))
-
-  (defun opencode-in-project ()
-    "Open vterm in the project root and execute opencode."
-    (interactive)
-    (let ((buf (run-command-in-project "opencode" "opencode")))
-      (when (and (buffer-live-p buf)
-                 (fboundp 'codex-attn-queue-buffer))
-        (codex-attn-queue-buffer buf 'opencode))))
+           (project-name
+            (file-name-nondirectory (directory-file-name project-root)))
+           (ghostel-buffer-name (format "*%s: %s*" label project-name))
+           ;; Keep the provider prefix stable for `codex-attn'.
+           (ghostel-buffer-name-function nil)
+           (buf (ghostel t)))
+      (with-current-buffer buf
+        (setq-local ghostel-buffer-name-function nil)
+        (ghostel-send-string command)
+        (ghostel-send-key "return"))
+      buf))
 
   (defun codex-in-project ()
-    "Open vterm in the project root and execute codex."
+    "Open Ghostel in the project root and execute codex."
     (interactive)
-    (let ((buf (run-command-in-project "codex" "codex")))
+    (let ((buf (run-command-in-ghostel-project "codex" "codex")))
       (when (and (buffer-live-p buf)
                  (fboundp 'codex-attn-queue-buffer))
         (codex-attn-queue-buffer buf 'codex))))
 
-  (defun vterm-in-project ()
-    "Open vterm in the project root."
+  (defun opencode-in-project ()
+    "Open Ghostel in the project root and execute opencode."
     (interactive)
-    (let* ((pr (project-current))
-           (project-root (if pr (project-root pr) default-directory))
-           (default-directory project-root)
-           (vterm-shell "/bin/bash"))
-      (vterm (concat "*vterm: " (file-name-nondirectory (directory-file-name project-root)) "*"))))
-  )
+    (let ((buf (run-command-in-ghostel-project "opencode" "opencode")))
+      (when (and (buffer-live-p buf)
+                 (fboundp 'codex-attn-queue-buffer))
+        (codex-attn-queue-buffer buf 'opencode)))))
+
+;; VTerm configuration kept as a fallback/reference.
+;; (use-package vterm
+;;   :straight (vterm :type git :host github :repo "akermu/emacs-libvterm")
+;;   :commands (codex-in-project opencode-in-project vterm-in-project)
+;;   :if (not (string= window-system 'w32))
+;;   :bind
+;;   (:map vterm-mode-map
+;;         ("M-y" . vterm-yank-pop)
+;;         ("C-c l" . vterm-copy-mode)
+;;         )
+;;   (:map vterm-copy-mode-map
+;;         ("q" . vterm-copy-mode))
+;;   :custom
+;;   (vterm-max-scrollback 10000)
+;;   :config
+;;   (defun run-in-vterm-kill (process event)
+;;     "A process sentinel. Kills PROCESS's buffer if it is live."
+;;     (let ((b (process-buffer process)))
+;;       (and (buffer-live-p b)
+;;            (kill-buffer b))))
+
+;;   (defun run-in-vterm (command)
+;;     "Execute string COMMAND in a new vterm.
+
+;; Interactively, prompt for COMMAND with the current buffer's file
+;; name supplied. When called from Dired, supply the name of the
+;; file at point.
+
+;; Like `async-shell-command`, but run in a vterm for full terminal features.
+
+;; The new vterm buffer is named in the form `*foo bar.baz*`, the
+;; command and its arguments in earmuffs.
+
+;; When the command terminates, the shell remains open, but when the
+;; shell exits, the buffer is killed."
+;;     (interactive
+;;      (list
+;;       (let* ((f (cond (buffer-file-name)
+;;                       ((eq major-mode 'dired-mode)
+;;                        (dired-get-filename nil t))))
+;;              (filename (concat " " (shell-quote-argument
+;;                                      (and f (file-relative-name f))))))
+;;         (read-shell-command "Terminal command: "
+;;                             (cons filename 0)
+;;                             (cons 'shell-command-history 1)
+;;                             (list filename)))))
+;;     (with-current-buffer (vterm (concat "*" command "*"))
+;;       (set-process-sentinel vterm--process #'run-in-vterm-kill)
+;;       (vterm-send-string command)
+;;       (vterm-send-return)))
+
+;;   (defun my/export-ai-editor-environment (&optional command)
+;;     "Export EDITOR/VISUAL for Emacs subprocesses and new vterm sessions."
+;;     (let ((cmd (or command my/ai-editor-command)))
+;;       (setenv "EDITOR" cmd)
+;;       (setenv "VISUAL" cmd)
+;;       ;; Ensure vterm gets these values even if shell init files overwrite them.
+;;       (setq vterm-environment
+;;             (append
+;;              (list (format "EDITOR=%s" cmd)
+;;                    (format "VISUAL=%s" cmd))
+;;              (seq-remove (lambda (entry)
+;;                            (or (string-prefix-p "EDITOR=" entry)
+;;                                (string-prefix-p "VISUAL=" entry)))
+;;                          vterm-environment)))))
+
+;;   (defun my/set-ai-editor-command (symbol value)
+;;     "Set SYMBOL to VALUE and export it as EDITOR/VISUAL."
+;;     (set-default symbol value)
+;;     (my/export-ai-editor-environment value))
+
+;;   (defcustom my/ai-editor-command "emacsclient --reuse-frame"
+;;     "Editor command exported to Emacs subprocesses."
+;;     :type 'string
+;;     :set #'my/set-ai-editor-command
+;;     :group 'vterm)
+
+;;   (my/export-ai-editor-environment)
+
+;;   (defun run-command-in-project (command &optional buffer-label)
+;;     "Open vterm in the project root and execute COMMAND.
+
+;; BUFFER-LABEL controls the vterm buffer name and defaults to COMMAND."
+;;     (let* ((pr (project-current))
+;;            (project-root (if pr (project-root pr) default-directory))
+;;            (default-directory project-root)
+;;            (label (or buffer-label command))
+;;            (project-name
+;;             (file-name-nondirectory (directory-file-name project-root))))
+;;       (with-current-buffer (vterm (format "*%s: %s*" label project-name))
+;;         (set-process-sentinel vterm--process #'run-in-vterm-kill)
+;;         (vterm-send-string command)
+;;         (vterm-send-return)
+;;         (current-buffer))))
+
+;;   (defun opencode-in-project ()
+;;     "Open vterm in the project root and execute opencode."
+;;     (interactive)
+;;     (let ((buf (run-command-in-project "opencode" "opencode")))
+;;       (when (and (buffer-live-p buf)
+;;                  (fboundp 'codex-attn-queue-buffer))
+;;         (codex-attn-queue-buffer buf 'opencode))))
+
+;;   (defun codex-in-project ()
+;;     "Open vterm in the project root and execute codex."
+;;     (interactive)
+;;     (let ((buf (run-command-in-project "codex" "codex")))
+;;       (when (and (buffer-live-p buf)
+;;                  (fboundp 'codex-attn-queue-buffer))
+;;         (codex-attn-queue-buffer buf 'codex))))
+
+;;   (defun vterm-in-project ()
+;;     "Open vterm in the project root."
+;;     (interactive)
+;;     (let* ((pr (project-current))
+;;            (project-root (if pr (project-root pr) default-directory))
+;;            (default-directory project-root)
+;;            (vterm-shell "/bin/bash"))
+;;       (vterm
+;;        (concat "*vterm: "
+;;                (file-name-nondirectory (directory-file-name project-root))
+;;                "*"))))
+;;   )
 
 (use-package undo-fu
   :config
