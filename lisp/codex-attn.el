@@ -41,8 +41,8 @@ Each entry is:
   "Polling interval in seconds when filesystem watch is unavailable."
   :type 'number)
 
-(defcustom codex-attn-queue-ttl 120
-  "Seconds before queued provider buffer candidates expire."
+(defcustom codex-attn-refresh-delay 0.15
+  "Seconds used to coalesce bursts of filesystem notifications."
   :type 'number)
 
 (defcustom codex-attn-modeline-text "Cdx!"
@@ -58,14 +58,30 @@ Each entry is:
   "Face for modeline indicator when pending and blink-on.")
 
 (defvar codex-attn--pending-sessions nil)
-(defvar codex-attn--thread->buffer (make-hash-table :test 'equal))
-(defvar codex-attn--pending-buffer-queue nil)
+(defvar codex-attn--actionable-session-list nil)
+(defvar codex-attn--terminal-id->buffer (make-hash-table :test 'equal))
+(defvar codex-attn--sessions-by-buffer (make-hash-table :test 'eq))
+(defvar codex-attn--state-cache (make-hash-table :test 'equal))
 (defvar codex-attn--snoozed-until (make-hash-table :test 'equal))
 (defvar codex-attn--watches nil)
 (defvar codex-attn--poll-timer nil)
+(defvar codex-attn--refresh-timer nil)
 (defvar codex-attn--blink-timer nil)
 (defvar codex-attn--blink-on nil)
 (defvar codex-attn--visible-pending nil)
+
+(defun codex-attn--new-id (kind)
+  (substring
+   (secure-hash 'sha256
+                (format "%s:%s:%s:%s:%s"
+                        kind (emacs-pid) (float-time) (random) (user-uid)))
+   0 24))
+
+;; `defvar' deliberately preserves this across source reloads.  A new Emacs
+;; process gets a new value, while months-long sessions retain one identity.
+(defvar codex-attn--emacs-instance-id (codex-attn--new-id "emacs"))
+(defvar-local codex-attn-terminal-id nil)
+(defvar-local codex-attn--terminal-cleaned-up nil)
 
 (defvar codex-attn--modeline-map
   (let ((map (make-sparse-keymap)))
@@ -102,6 +118,35 @@ Each entry is:
 (defun codex-attn--normalize-dir (dir)
   (when (and dir (stringp dir))
     (ignore-errors (file-name-as-directory (file-truename dir)))))
+
+(defun codex-attn--environment-with-identity (environment terminal-id)
+  (let ((prefixes '("CODEX_ATTN_EMACS_INSTANCE_ID="
+                    "CODEX_ATTN_TERMINAL_ID=")))
+    (append
+     (list (concat (car prefixes) codex-attn--emacs-instance-id)
+           (concat (cadr prefixes) terminal-id))
+     (seq-remove
+      (lambda (entry)
+        (and (stringp entry)
+             (seq-some (lambda (prefix) (string-prefix-p prefix entry)) prefixes)))
+      environment))))
+
+(defun codex-attn--ghostel-setup ()
+  "Give the current Ghostel buffer a stable notifier identity."
+  (unless codex-attn-terminal-id
+    (setq-local codex-attn-terminal-id (codex-attn--new-id "terminal")))
+  (setq-local ghostel-environment
+              (codex-attn--environment-with-identity
+               (and (boundp 'ghostel-environment) ghostel-environment)
+               codex-attn-terminal-id))
+  (setq-local codex-attn--terminal-cleaned-up nil)
+  (puthash codex-attn-terminal-id (current-buffer)
+           codex-attn--terminal-id->buffer)
+  (add-hook 'kill-buffer-hook #'codex-attn--terminal-buffer-killed nil t))
+
+;; Ghostel runs this mode hook before starting the child process, so both IDs
+;; become part of that process' environment without changing Codex itself.
+(add-hook 'ghostel-mode-hook #'codex-attn--ghostel-setup)
 
 (defun codex-attn--state-dirs ()
   (let ((seen (make-hash-table :test 'equal))
@@ -162,123 +207,26 @@ Each entry is:
 
 ;; (defalias 'codex-attn--vterm-buffers #'codex-attn--terminal-buffers)
 
-(defun codex-attn--buffers-for-cwd (provider cwd)
-  (let* ((target-provider (codex-attn--provider-symbol provider))
-         (target-cwd (codex-attn--normalize-dir cwd))
-         candidates)
-    (when (and target-provider target-cwd)
-      ;; (dolist (buf (codex-attn--vterm-buffers target-provider))
-      (dolist (buf (codex-attn--terminal-buffers target-provider))
-        (with-current-buffer buf
-          (let ((buf-cwd (codex-attn--normalize-dir default-directory)))
-            (when (and buf-cwd (string= target-cwd buf-cwd))
-              (push buf candidates))))))
-    (nreverse candidates)))
+(defun codex-attn--rebuild-buffer-index ()
+  (clrhash codex-attn--terminal-id->buffer)
+  (dolist (buf (codex-attn--terminal-buffers))
+    (with-current-buffer buf
+      (unless codex-attn-terminal-id
+        (codex-attn--ghostel-setup))
+      (puthash codex-attn-terminal-id buf codex-attn--terminal-id->buffer))))
 
-(defun codex-attn--find-terminal-by-cwd (provider cwd)
-  (let ((candidates (codex-attn--buffers-for-cwd provider cwd)))
-    (when (= (length candidates) 1)
-      (car candidates))))
-
-;; (defalias 'codex-attn--find-vterm-by-cwd
-;;   #'codex-attn--find-terminal-by-cwd)
-
-(defun codex-attn--queue-push (buf &optional provider)
-  "Queue BUF as a candidate for the next thread binding.
-
-PROVIDER defaults to what can be inferred from BUF."
-  (let* ((buf-provider (or (codex-attn--provider-symbol provider)
-                           (codex-attn--buffer-provider buf)))
-         (now (float-time)))
-    (when (and buf-provider (buffer-live-p buf))
-      (setq codex-attn--pending-buffer-queue
-            (cons (list :provider buf-provider :buffer buf :ts now)
-                  (seq-remove
-                   (lambda (entry)
-                     (eq (plist-get entry :buffer) buf))
-                   codex-attn--pending-buffer-queue))))))
-
-(defun codex-attn-queue-buffer (&optional buffer provider)
-  "Queue BUFFER for next session mapping.
-
-BUFFER defaults to current buffer.
-PROVIDER is optional and inferred from BUFFER when omitted."
-  (interactive)
-  (let* ((buf (or buffer (current-buffer)))
-         (resolved-provider (or (codex-attn--provider-symbol provider)
-                                (codex-attn--buffer-provider buf))))
-    (if resolved-provider
-        (progn
-          (codex-attn--queue-push buf resolved-provider)
-          (message "codex-attn: queued %s for provider %s."
-                   (buffer-name buf) resolved-provider))
-      (message "codex-attn: buffer %s is not a tracked provider terminal."
-               (buffer-name buf)))))
-
-(defun codex-attn--queue-pop (&optional provider)
-  (let* ((target-provider (codex-attn--provider-symbol provider))
-         (now (float-time))
-         (found nil)
-         kept)
-    (dolist (entry codex-attn--pending-buffer-queue)
-      (let* ((buf (plist-get entry :buffer))
-             (buf-provider (codex-attn--provider-symbol (plist-get entry :provider)))
-             (ts (plist-get entry :ts))
-             (valid (and (buffer-live-p buf)
-                         (numberp ts)
-                         (<= (- now ts) codex-attn-queue-ttl)
-                         buf-provider
-                         ;; (codex-attn--provider-vterm-buffer-p buf buf-provider)
-                         (codex-attn--provider-terminal-buffer-p buf buf-provider))))
-        (when valid
-          (if (and (not found)
-                   (or (null target-provider)
-                       (eq buf-provider target-provider)))
-              (setq found buf)
-            (push entry kept)))))
-    (setq codex-attn--pending-buffer-queue (nreverse kept))
-    found))
-
-(defun codex-attn-register-current-buffer ()
-  "Register current provider buffer for the next thread binding."
-  (interactive)
-  (let* ((buf (current-buffer))
-         (provider (codex-attn--buffer-provider buf)))
-    (if provider
-        (progn
-          (codex-attn--queue-push buf provider)
-          (message "codex-attn: registered %s for provider %s."
-                   (buffer-name buf) provider))
-      ;; (message "codex-attn: current buffer is not a tracked provider vterm.")
-      (message "codex-attn: current buffer is not a tracked provider terminal."))))
-
-(defun codex-attn--thread-key (provider thread-id)
-  (when (and provider thread-id)
-    (format "%s::%s" (symbol-name (codex-attn--provider-symbol provider)) thread-id)))
-
-(defun codex-attn--buffer-for-thread (provider thread-id)
-  (let* ((key (codex-attn--thread-key provider thread-id))
-         (buf (and key (gethash key codex-attn--thread->buffer))))
+(defun codex-attn--buffer-for-terminal-id (terminal-id)
+  (let ((buf (and terminal-id
+                  (gethash terminal-id codex-attn--terminal-id->buffer))))
     (if (buffer-live-p buf)
         buf
-      (when key
-        (remhash key codex-attn--thread->buffer))
+      (when terminal-id
+        (remhash terminal-id codex-attn--terminal-id->buffer))
       nil)))
-
-(defun codex-attn--put-thread-buffer (provider thread-id buf)
-  (let ((key (codex-attn--thread-key provider thread-id)))
-    (when (and key (buffer-live-p buf))
-      (puthash key buf codex-attn--thread->buffer))))
 
 (defun codex-attn--current-attn-buffer ()
   (let ((buf (window-buffer (selected-window))))
     (when (codex-attn--buffer-provider buf)
-      buf)))
-
-(defun codex-attn--current-codex-buffer ()
-  "Compatibility helper for callers expecting codex-only current buffer."
-  (let ((buf (codex-attn--current-attn-buffer)))
-    (when (eq (codex-attn--buffer-provider buf) 'codex)
       buf)))
 
 (defun codex-attn--session-provider (session)
@@ -293,110 +241,54 @@ PROVIDER is optional and inferred from BUFFER when omitted."
 (defun codex-attn--session-cwd (session)
   (plist-get session :cwd))
 
+(defun codex-attn--session-terminal-id (session)
+  (plist-get session :terminal_id))
+
+(defun codex-attn--session-emacs-instance-id (session)
+  (plist-get session :emacs_instance_id))
+
+(defun codex-attn--session-has-identity-p (session)
+  (and (codex-attn--session-emacs-instance-id session)
+       (codex-attn--session-terminal-id session)))
+
+(defun codex-attn--session-owned-p (session)
+  (and (codex-attn--session-has-identity-p session)
+       (equal (codex-attn--session-emacs-instance-id session)
+              codex-attn--emacs-instance-id)))
+
 (defun codex-attn--session-key (session)
-  (or (plist-get session :file)
-      (codex-attn--thread-key
-       (codex-attn--session-provider session)
-       (codex-attn--session-thread-id session))))
+  (plist-get session :file))
 
-(defun codex-attn--session-has-associated-buffer-p (session)
-  (let* ((provider (codex-attn--session-provider session))
-         (thread-id (codex-attn--session-thread-id session))
-         (cwd (codex-attn--session-cwd session))
-         (mapped (and thread-id (codex-attn--buffer-for-thread provider thread-id))))
-    (or (buffer-live-p mapped)
-        (and (stringp cwd)
-             ;; (buffer-live-p (codex-attn--find-vterm-by-cwd provider cwd))
-             (buffer-live-p (codex-attn--find-terminal-by-cwd provider cwd))))))
-
-(defun codex-attn--actionable-sessions (sessions)
-  (seq-filter #'codex-attn--session-has-associated-buffer-p sessions))
-
-(defun codex-attn--session-targets-buffer-p (session buf)
-  (let* ((provider (codex-attn--session-provider session))
-         (thread-id (codex-attn--session-thread-id session))
-         (cwd (codex-attn--session-cwd session))
-         (mapped (and thread-id (codex-attn--buffer-for-thread provider thread-id))))
-    (cond
-     ((not (eq (codex-attn--buffer-provider buf) provider)) nil)
-     ((eq mapped buf) t)
-     ((and cwd (stringp cwd))
-      (let ((candidates (codex-attn--buffers-for-cwd provider cwd)))
-        (cond
-         ((and (= (length candidates) 1)
-               (eq (car candidates) buf))
-          (when (and thread-id (not mapped))
-            (codex-attn--put-thread-buffer provider thread-id buf))
-          t)
-         (t nil))))
-     (t nil))))
+(defun codex-attn--buffer-for-session (session)
+  (and (codex-attn--session-owned-p session)
+       (codex-attn--buffer-for-terminal-id
+        (codex-attn--session-terminal-id session))))
 
 (defun codex-attn--visible-pending-sessions ()
-  (let* ((buf (codex-attn--current-attn-buffer))
-         (sessions (codex-attn--actionable-sessions codex-attn--pending-sessions)))
-    (if (not (buffer-live-p buf))
-        sessions
-      (seq-remove
-       (lambda (session)
-         (codex-attn--session-targets-buffer-p session buf))
-       sessions))))
+  codex-attn--actionable-session-list)
+
+(defun codex-attn--forget-session (session &optional delete-file-p)
+  (let ((file (plist-get session :file))
+        (key (codex-attn--session-key session)))
+    (when file
+      (remhash file codex-attn--state-cache)
+      (when (and delete-file-p (file-exists-p file))
+        (condition-case nil (delete-file file) (file-error nil))))
+    (when key
+      (remhash key codex-attn--snoozed-until))
+    (setq codex-attn--pending-sessions
+          (delq session codex-attn--pending-sessions))))
 
 (defun codex-attn--ack-visible-sessions ()
-  (let ((buf (codex-attn--current-attn-buffer))
-        (changed nil))
-    (when (buffer-live-p buf)
-      (dolist (session codex-attn--pending-sessions)
-        (when (codex-attn--session-targets-buffer-p session buf)
-          (let ((file (plist-get session :file)))
-            (when (and file (file-exists-p file))
-              (delete-file file)
-              (setq changed t))))))
-    changed))
-
-(defun codex-attn--maybe-bind-thread (session)
-  (let* ((provider (codex-attn--session-provider session))
-         (thread-id (codex-attn--session-thread-id session))
-         (cwd (codex-attn--session-cwd session)))
-    (when (and provider thread-id (not (codex-attn--buffer-for-thread provider thread-id)))
-      ;; (let ((buf (or (codex-attn--find-vterm-by-cwd provider cwd)
-      (let ((buf (or (codex-attn--find-terminal-by-cwd provider cwd)
-                     (codex-attn--queue-pop provider))))
-        (when (buffer-live-p buf)
-          (codex-attn--put-thread-buffer provider thread-id buf))))))
-
-(defun codex-attn--auto-bind ()
-  (dolist (session codex-attn--pending-sessions)
-    (codex-attn--maybe-bind-thread session)))
-
-(defun codex-attn--prune-thread-map ()
-  (let ((active (make-hash-table :test 'equal)))
-    (dolist (session codex-attn--pending-sessions)
-      (let* ((provider (codex-attn--session-provider session))
-             (thread-id (codex-attn--session-thread-id session))
-             (key (codex-attn--thread-key provider thread-id)))
-        (when key
-          (puthash key t active))))
-    (maphash
-     (lambda (key _buf)
-       (unless (gethash key active)
-         (remhash key codex-attn--thread->buffer)))
-     codex-attn--thread->buffer)))
-
-(defun codex-attn--prune-buffer-queue ()
-  (let ((now (float-time)))
-    (setq codex-attn--pending-buffer-queue
-          (seq-filter
-           (lambda (entry)
-             (let* ((buf (plist-get entry :buffer))
-                    (provider (codex-attn--provider-symbol (plist-get entry :provider)))
-                    (ts (plist-get entry :ts)))
-               (and (buffer-live-p buf)
-                    provider
-                    ;; (codex-attn--provider-vterm-buffer-p buf provider)
-                    (codex-attn--provider-terminal-buffer-p buf provider)
-                    (numberp ts)
-                    (<= (- now ts) codex-attn-queue-ttl))))
-           codex-attn--pending-buffer-queue))))
+  (let* ((buf (codex-attn--current-attn-buffer))
+         (sessions (and (buffer-live-p buf)
+                        (copy-sequence
+                         (gethash buf codex-attn--sessions-by-buffer)))))
+    (dolist (session sessions)
+      (codex-attn--forget-session session t))
+    (when sessions
+      (codex-attn--rebuild-actionable-index))
+    (consp sessions)))
 
 (defun codex-attn--plist-first (plist keys)
   (let ((rest keys)
@@ -438,41 +330,89 @@ PROVIDER is optional and inferred from BUFFER when omitted."
                         (codex-attn--plist-first data '(:pending_since :pendingSince))))
         (last-event-ts (codex-attn--as-number
                         (codex-attn--plist-first data '(:last_event_ts :lastEventTs :timestamp))))
+        (emacs-instance-id
+         (codex-attn--plist-first data '(:emacs_instance_id :emacsInstanceId)))
+        (terminal-id
+         (codex-attn--plist-first data '(:terminal_id :terminalId)))
         (event-type (codex-attn--plist-first data '(:type :event_type :eventType))))
     (list :provider (codex-attn--provider-symbol provider)
           :thread_id (and thread-id (format "%s" thread-id))
           :turn_id turn-id
           :cwd cwd
+          :emacs_instance_id (and emacs-instance-id (format "%s" emacs-instance-id))
+          :terminal_id (and terminal-id (format "%s" terminal-id))
           :last_assistant_message (and last-msg (format "%s" last-msg))
           :pending_since pending-since
           :last_event_ts last-event-ts
           :type event-type
           :file file)))
 
-(defun codex-attn--read-provider-state-dir (provider)
-  (let* ((state-dir (codex-attn--provider-state-dir provider))
-         (dir (and state-dir (file-name-as-directory state-dir)))
-        sessions)
-    (when (and dir (file-directory-p dir))
-      (dolist (file (directory-files dir t "\\.json\\'"))
-        (condition-case _err
-            (let* ((json-object-type 'plist)
-                   (json-key-type 'keyword)
-                   (json-array-type 'list)
-                   (json-false nil)
-                   (raw (json-read-file file))
-                   (session (codex-attn--normalize-session-data provider raw file)))
-              (push session sessions))
-          (error nil))))
+(defun codex-attn--file-signature (file)
+  (let ((attrs (file-attributes file 'string)))
+    (and attrs
+         (list (file-attribute-size attrs)
+               (file-attribute-modification-time attrs)
+               (file-attribute-inode-number attrs)))))
+
+(defun codex-attn--read-session-file (provider file)
+  (condition-case nil
+      (let* ((json-object-type 'plist)
+             (json-key-type 'keyword)
+             (json-array-type 'list)
+             (json-false nil)
+             (raw (json-read-file file)))
+        (codex-attn--normalize-session-data provider raw file))
+    (error nil)))
+
+(defun codex-attn--sync-state-cache ()
+  "Reconcile state filenames, parsing only new or changed JSON files."
+  (let ((seen (make-hash-table :test 'equal)))
+    (dolist (entry codex-attn-providers)
+      (let* ((provider (car entry))
+             (dir (codex-attn--provider-state-dir provider)))
+        (when (and dir (file-directory-p dir))
+          (dolist (file (directory-files dir t "\\.json\\'"))
+            (puthash file t seen)
+            (let* ((signature (codex-attn--file-signature file))
+                   (cached (gethash file codex-attn--state-cache)))
+              (unless (equal signature (plist-get cached :signature))
+                (let ((session (codex-attn--read-session-file provider file)))
+                  (if (and session
+                           (not (codex-attn--session-has-identity-p session)))
+                      (progn
+                        (condition-case nil (delete-file file) (file-error nil))
+                        (remhash file codex-attn--state-cache))
+                    (puthash file (list :signature signature :session session)
+                             codex-attn--state-cache)))))))))
+    (maphash
+     (lambda (file _entry)
+       (unless (gethash file seen)
+         (remhash file codex-attn--state-cache)))
+     codex-attn--state-cache)))
+
+(defun codex-attn--cached-sessions ()
+  (let (sessions)
+    (maphash
+     (lambda (_file entry)
+       (let ((session (plist-get entry :session)))
+         (when (and session (codex-attn--session-owned-p session))
+           (push session sessions))))
+     codex-attn--state-cache)
     sessions))
 
+(defun codex-attn--remove-orphaned-owned-sessions (sessions)
+  (dolist (session (copy-sequence sessions))
+    (when (and (codex-attn--session-terminal-id session)
+               (equal (codex-attn--session-emacs-instance-id session)
+                      codex-attn--emacs-instance-id)
+               (not (codex-attn--buffer-for-terminal-id
+                     (codex-attn--session-terminal-id session))))
+      (codex-attn--forget-session session t))))
+
 (defun codex-attn--read-state-dir ()
-  "Compatibility helper; now reads all configured provider state dirs."
-  (let (sessions)
-    (dolist (entry codex-attn-providers)
-      (setq sessions (nconc (codex-attn--read-provider-state-dir (car entry))
-                            sessions)))
-    sessions))
+  "Read all configured provider state directories through the cache."
+  (codex-attn--sync-state-cache)
+  (codex-attn--cached-sessions))
 
 (defun codex-attn--filter-snoozed-sessions (sessions)
   (let ((now (float-time))
@@ -495,26 +435,75 @@ PROVIDER is optional and inferred from BUFFER when omitted."
      codex-attn--snoozed-until)
     (nreverse visible)))
 
-(defun codex-attn--refresh ()
-  (setq codex-attn--pending-sessions
-        (codex-attn--filter-snoozed-sessions (codex-attn--read-state-dir)))
-  (codex-attn--prune-buffer-queue)
-  (codex-attn--prune-thread-map)
-  (codex-attn--auto-bind)
-  ;; If the user is already in the target provider buffer, auto-ack.
-  (when (codex-attn--ack-visible-sessions)
-    (setq codex-attn--pending-sessions
-          (codex-attn--filter-snoozed-sessions (codex-attn--read-state-dir)))
-    (codex-attn--prune-thread-map)
-    (codex-attn--auto-bind))
-  (setq codex-attn--visible-pending (consp (codex-attn--visible-pending-sessions)))
+(defun codex-attn--rebuild-actionable-index ()
+  (clrhash codex-attn--sessions-by-buffer)
+  (setq codex-attn--actionable-session-list nil)
+  (dolist (session codex-attn--pending-sessions)
+    (let ((buf (codex-attn--buffer-for-session session)))
+      (when (buffer-live-p buf)
+        (push session codex-attn--actionable-session-list)
+        (puthash buf (cons session (gethash buf codex-attn--sessions-by-buffer))
+                 codex-attn--sessions-by-buffer))))
+  (setq codex-attn--actionable-session-list
+        (nreverse codex-attn--actionable-session-list)))
+
+(defun codex-attn--update-indicator ()
+  (setq codex-attn--visible-pending
+        (consp codex-attn--actionable-session-list))
   (if codex-attn--visible-pending
       (codex-attn--start-blink)
     (codex-attn--stop-blink))
-  (force-mode-line-update t))
+  (force-mode-line-update))
 
-(defun codex-attn--watch-callback (_event)
-  (codex-attn--refresh))
+(defun codex-attn--terminal-buffer-killed ()
+  "Remove state owned by the current terminal buffer, idempotently."
+  (unless codex-attn--terminal-cleaned-up
+    (setq codex-attn--terminal-cleaned-up t)
+    (let ((terminal-id codex-attn-terminal-id)
+          owned)
+      ;; Include snoozed sessions: they remain in the cache even though they
+      ;; are intentionally absent from `codex-attn--pending-sessions'.
+      (dolist (session (codex-attn--cached-sessions))
+        (when (equal terminal-id (codex-attn--session-terminal-id session))
+          (push session owned)))
+      (dolist (session owned)
+        (codex-attn--forget-session session t))
+      (when terminal-id
+        (remhash terminal-id codex-attn--terminal-id->buffer))
+      (codex-attn--rebuild-actionable-index)
+      (codex-attn--update-indicator))))
+
+(defun codex-attn--refresh ()
+  (codex-attn--rebuild-buffer-index)
+  (codex-attn--sync-state-cache)
+  (let ((sessions (codex-attn--cached-sessions)))
+    (setq codex-attn--pending-sessions sessions)
+    (codex-attn--remove-orphaned-owned-sessions sessions))
+  (setq codex-attn--pending-sessions
+        (codex-attn--filter-snoozed-sessions
+         (codex-attn--cached-sessions)))
+  (codex-attn--rebuild-actionable-index)
+  ;; If the user is already in the target provider buffer, auto-ack.
+  (codex-attn--ack-visible-sessions)
+  (codex-attn--update-indicator))
+
+(defun codex-attn--run-scheduled-refresh ()
+  (setq codex-attn--refresh-timer nil)
+  (when codex-attn-mode
+    (codex-attn--refresh)))
+
+(defun codex-attn--schedule-refresh (&rest _)
+  (unless codex-attn--refresh-timer
+    (setq codex-attn--refresh-timer
+          (run-at-time codex-attn-refresh-delay nil
+                       #'codex-attn--run-scheduled-refresh))))
+
+(defun codex-attn--watch-callback (event)
+  (when (or (memq (cadr event) '(stopped renamed created deleted changed))
+            (seq-some (lambda (part)
+                        (and (stringp part) (string-suffix-p ".json" part)))
+                      event))
+    (codex-attn--schedule-refresh)))
 
 (defun codex-attn--start-watch ()
   (codex-attn--ensure-dirs)
@@ -539,7 +528,8 @@ PROVIDER is optional and inferred from BUFFER when omitted."
       (when (or need-poll (null codex-attn--watches))
         (unless codex-attn--poll-timer
           (setq codex-attn--poll-timer
-                (run-with-timer 0 codex-attn-poll-interval #'codex-attn--refresh))))
+                (run-with-timer 0 codex-attn-poll-interval
+                                #'codex-attn--schedule-refresh))))
       (when (and (not need-poll) codex-attn--watches codex-attn--poll-timer)
         (cancel-timer codex-attn--poll-timer)
         (setq codex-attn--poll-timer nil))))
@@ -553,11 +543,14 @@ PROVIDER is optional and inferred from BUFFER when omitted."
   (setq codex-attn--watches nil)
   (when codex-attn--poll-timer
     (cancel-timer codex-attn--poll-timer)
-    (setq codex-attn--poll-timer nil)))
+    (setq codex-attn--poll-timer nil))
+  (when codex-attn--refresh-timer
+    (cancel-timer codex-attn--refresh-timer)
+    (setq codex-attn--refresh-timer nil)))
 
 (defun codex-attn--blink-tick ()
   (setq codex-attn--blink-on (not codex-attn--blink-on))
-  (force-mode-line-update t))
+  (force-mode-line-update))
 
 (defun codex-attn--start-blink ()
   (unless codex-attn--blink-timer
@@ -583,10 +576,10 @@ PROVIDER is optional and inferred from BUFFER when omitted."
 
 (defun codex-attn--on-buffer-visibility-change (&rest _)
   (when codex-attn-mode
-    (when (codex-attn--ack-visible-sessions)
-      (codex-attn--refresh))
-    (setq codex-attn--visible-pending (consp (codex-attn--visible-pending-sessions)))
-    (force-mode-line-update t)))
+    ;; The expensive filesystem reconciliation happens only on watcher/poll
+    ;; refreshes.  This hot UI hook performs a direct buffer hash lookup.
+    (codex-attn--ack-visible-sessions)
+    (codex-attn--update-indicator)))
 
 (defun codex-attn--session-pending-since (session)
   (or (plist-get session :pending_since)
@@ -643,10 +636,9 @@ ORDER can be `fifo` or `recent`."
     sessions))
 
 (defun codex-attn--ack-session (session)
-  (let ((file (plist-get session :file)))
-    (when (and file (file-exists-p file))
-      (delete-file file)))
-  (codex-attn--refresh))
+  (codex-attn--forget-session session t)
+  (codex-attn--rebuild-actionable-index)
+  (codex-attn--update-indicator))
 
 (defun codex-attn-clear-pending ()
   "Delete all pending session state files."
@@ -690,25 +682,7 @@ ORDER can be `fifo` or `recent`."
 (defun codex-attn--jump-to-session (session)
   (let* ((provider (codex-attn--session-provider session))
          (thread-id (codex-attn--session-thread-id session))
-         (cwd (codex-attn--session-cwd session))
-         (buf (and thread-id (codex-attn--buffer-for-thread provider thread-id))))
-    (unless (buffer-live-p buf)
-      (let ((by-cwd (codex-attn--buffers-for-cwd provider cwd)))
-        (setq buf
-              (cond
-               ((= (length by-cwd) 1) (car by-cwd))
-               ((> (length by-cwd) 1)
-                (let* ((choices (mapcar (lambda (b)
-                                          (cons (buffer-name b) b))
-                                        by-cwd))
-                       (picked (cdr (assoc (completing-read
-                                            (format "Buffer for pending %s session: " provider)
-                                            choices nil t)
-                                           choices))))
-                  picked))
-               (t nil))))
-      (when (and thread-id (buffer-live-p buf))
-        (codex-attn--put-thread-buffer provider thread-id buf)))
+         (buf (codex-attn--buffer-for-session session)))
     (if (buffer-live-p buf)
         (progn
           (pop-to-buffer buf)
@@ -740,44 +714,41 @@ ORDER can be `fifo` or `recent`."
 (defun codex-attn-status ()
   "Return and display current attention internals."
   (interactive)
-  (let (mappings)
-    (maphash (lambda (thread buf)
-               (when (buffer-live-p buf)
-                 (push (cons thread (buffer-name buf)) mappings)))
-             codex-attn--thread->buffer)
-    (setq mappings (nreverse mappings))
-    (let ((status (list
-                   :watch-count (length codex-attn--watches)
-                   :poll-active (and codex-attn--poll-timer t)
-                   :pending-count (length codex-attn--pending-sessions)
-                   :snoozed-count (hash-table-count codex-attn--snoozed-until)
-                   :queue-count (length codex-attn--pending-buffer-queue)
-                   :mappings mappings)))
-      (message "codex-attn status: watches=%d poll=%s pending=%d snoozed=%d queue=%d mapped=%d"
-               (length codex-attn--watches)
-               (if codex-attn--poll-timer "on" "off")
-               (length codex-attn--pending-sessions)
-               (hash-table-count codex-attn--snoozed-until)
-               (length codex-attn--pending-buffer-queue)
-               (length mappings))
-      status)))
+  (let ((status (list
+                 :watch-count (length codex-attn--watches)
+                 :poll-active (and codex-attn--poll-timer t)
+                 :refresh-pending (and codex-attn--refresh-timer t)
+                 :cache-count (hash-table-count codex-attn--state-cache)
+                 :pending-count (length codex-attn--pending-sessions)
+                 :actionable-count (length codex-attn--actionable-session-list)
+                 :terminal-count (hash-table-count codex-attn--terminal-id->buffer)
+                 :snoozed-count (hash-table-count codex-attn--snoozed-until))))
+    (message "codex-attn status: watches=%d poll=%s cache=%d pending=%d actionable=%d terminals=%d snoozed=%d"
+             (length codex-attn--watches)
+             (if codex-attn--poll-timer "on" "off")
+             (hash-table-count codex-attn--state-cache)
+             (length codex-attn--pending-sessions)
+             (length codex-attn--actionable-session-list)
+             (hash-table-count codex-attn--terminal-id->buffer)
+             (hash-table-count codex-attn--snoozed-until))
+    status))
 
 (define-minor-mode codex-attn-mode
   "Global mode for Codex/OpenCode attention indicator."
   :global t
   (if codex-attn-mode
       (progn
-        (codex-attn--start-watch)
         (add-hook 'window-selection-change-functions #'codex-attn--on-buffer-visibility-change)
         (add-hook 'window-buffer-change-functions #'codex-attn--on-buffer-visibility-change)
-        (add-to-list 'global-mode-string codex-attn--modeline-entry t))
+        (add-to-list 'global-mode-string codex-attn--modeline-entry t)
+        (codex-attn--start-watch))
     (remove-hook 'window-selection-change-functions #'codex-attn--on-buffer-visibility-change)
     (remove-hook 'window-buffer-change-functions #'codex-attn--on-buffer-visibility-change)
     (codex-attn--stop-watch)
     (codex-attn--stop-blink)
     (setq codex-attn--visible-pending nil)
-    (setq global-mode-string (delq codex-attn--modeline-entry global-mode-string))
-    (force-mode-line-update t)))
+    (setq global-mode-string (delete codex-attn--modeline-entry global-mode-string))
+    (force-mode-line-update)))
 
 (provide 'codex-attn)
 

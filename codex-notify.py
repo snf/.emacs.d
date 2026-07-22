@@ -2,6 +2,7 @@
 import json
 import os
 import sys
+import tempfile
 import time
 
 
@@ -173,6 +174,11 @@ def main():
     if not thread_id:
         return 0
 
+    emacs_instance_id = os.environ.get("CODEX_ATTN_EMACS_INSTANCE_ID")
+    terminal_id = os.environ.get("CODEX_ATTN_TERMINAL_ID")
+    if not emacs_instance_id or not terminal_id:
+        return 0
+
     state_dir = configured_state_dir
     if not state_dir:
         cache_home = os.environ.get("XDG_CACHE_HOME", os.path.expanduser("~/.cache"))
@@ -182,6 +188,7 @@ def main():
     path = os.path.join(state_dir, f"{thread_id}.json")
     now = time.time()
     pending_since = now
+    old = None
     if os.path.exists(path):
         try:
             with open(path, "r", encoding="utf-8") as f:
@@ -190,10 +197,11 @@ def main():
         except Exception:
             pass
 
+    turn_id = _pick_any(event, "turn_id", "turnId", "turn-id")
     data = {
         "thread_id": thread_id,
         "provider": provider,
-        "turn_id": _pick_any(event, "turn_id", "turnId", "turn-id"),
+        "turn_id": turn_id,
         "cwd": _pick_any(
             event,
             "cwd",
@@ -214,12 +222,36 @@ def main():
         "pending_since": pending_since,
         "last_event_ts": now,
         "type": _pick_any(event, "type", "event_type", "eventType"),
+        "emacs_instance_id": emacs_instance_id,
+        "terminal_id": terminal_id,
     }
 
-    tmp_path = path + ".tmp"
-    with open(tmp_path, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=True)
-    os.replace(tmp_path, path)
+    # Codex can deliver the same completed-turn notification more than once.
+    # Avoid rewriting the file in that case: besides needless I/O, every replace
+    # wakes Emacs' file watcher.  A missing turn id is not safe to deduplicate.
+    if (
+        turn_id is not None
+        and isinstance(old, dict)
+        and old.get("thread_id") == thread_id
+        and old.get("provider") == provider
+        and old.get("turn_id") == turn_id
+        and old.get("emacs_instance_id") == emacs_instance_id
+        and old.get("terminal_id") == terminal_id
+    ):
+        return 0
+
+    fd, tmp_path = tempfile.mkstemp(
+        prefix=f".{thread_id}.", suffix=".tmp", dir=state_dir
+    )
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=True)
+        os.replace(tmp_path, path)
+    finally:
+        try:
+            os.unlink(tmp_path)
+        except FileNotFoundError:
+            pass
     return 0
 
 
