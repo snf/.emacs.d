@@ -1644,6 +1644,17 @@ List these clarification points, and await further instructions before continuin
   (run-with-timer 0 (* 30 60) #'alert "30 minutes have passed!" :style 'fringe)
   )
 ;; ui
+(use-package dired-subtree
+  :straight (dired-subtree
+             :type git
+             :host github
+             :repo "Fuco1/dired-hacks"
+             :files ("dired-subtree.el"))
+  :after dired
+  :bind (:map dired-mode-map
+              ("TAB" . dired-subtree-toggle)
+              ("<backtab>" . dired-subtree-cycle)))
+
 (use-package all-the-icons-dired
   :if (display-graphic-p)
   :config
