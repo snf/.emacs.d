@@ -52,6 +52,16 @@
   (defun my/ansi-color-apply-on-region (begin end)
     (interactive "r")
     (ansi-color-apply-on-region begin end t))
+
+  (defun my/rename-buffer-prefill (original new-name &optional unique)
+    "Make `rename-buffer' start with the current buffer name."
+    (interactive
+     (list (read-string "Rename buffer: " (buffer-name))
+           current-prefix-arg))
+    (funcall original new-name unique))
+
+  (unless (advice-member-p #'my/rename-buffer-prefill 'rename-buffer)
+    (advice-add 'rename-buffer :around #'my/rename-buffer-prefill))
   )
 
 ;; === packages ===
