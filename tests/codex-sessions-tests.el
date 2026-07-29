@@ -118,6 +118,64 @@ Each item in SPECS is (SYMBOL NAME)."
           (when (buffer-live-p panel)
             (kill-buffer panel)))))))
 
+(ert-deftest codex-sessions-clearing-attention-keeps-all-off-focus-rows ()
+  (codex-sessions-test--with-state
+    (codex-sessions-test--with-buffers
+        ((alpha "*codex: alpha*")
+         (beta "*codex: beta*")
+         (zeta "*codex: zeta*"))
+      (let* ((panel (generate-new-buffer " *codex-sessions-attention-test*"))
+             (codex-sessions-buffer-name (buffer-name panel))
+             (main-window (selected-window))
+             (panel-window
+              (display-buffer-in-side-window
+               panel '((side . left) (slot . 0) (window-width . 30)))))
+        (unwind-protect
+            (progn
+              (puthash zeta (list 'pending) codex-attn--sessions-by-buffer)
+              (codex-sessions--initialize-buffer panel)
+              (select-window main-window)
+              (remhash zeta codex-attn--sessions-by-buffer)
+              (codex-sessions--redraw)
+              (with-current-buffer panel
+                (dolist (name '("alpha" "beta" "zeta"))
+                  (should (string-match-p
+                           (regexp-quote name)
+                           (buffer-string))))))
+          (when (window-live-p panel-window)
+            (delete-window panel-window))
+          (when (buffer-live-p panel)
+            (kill-buffer panel)))))))
+
+(ert-deftest codex-sessions-new-attention-keeps-and-reorders-all-rows ()
+  (codex-sessions-test--with-state
+    (codex-sessions-test--with-buffers
+        ((alpha "*codex: alpha*")
+         (beta "*codex: beta*")
+         (zeta "*codex: zeta*"))
+      (let* ((panel (generate-new-buffer " *codex-sessions-new-attn-test*"))
+             (codex-sessions-buffer-name (buffer-name panel))
+             (main-window (selected-window))
+             (panel-window
+              (display-buffer-in-side-window
+               panel '((side . left) (slot . 0) (window-width . 30)))))
+        (unwind-protect
+            (progn
+              (codex-sessions--initialize-buffer panel)
+              (select-window main-window)
+              (puthash zeta (list 'pending) codex-attn--sessions-by-buffer)
+              (codex-sessions--redraw)
+              (with-current-buffer panel
+                (let ((text (buffer-string)))
+                  (dolist (name '("alpha" "beta" "zeta"))
+                    (should (string-match-p (regexp-quote name) text)))
+                  (should (< (string-match (regexp-quote "zeta") text)
+                             (string-match (regexp-quote "alpha") text))))))
+          (when (window-live-p panel-window)
+            (delete-window panel-window))
+          (when (buffer-live-p panel)
+            (kill-buffer panel)))))))
+
 (provide 'codex-sessions-tests)
 
 ;;; codex-sessions-tests.el ends here

@@ -57,7 +57,6 @@ The `success' face matches Magit's added-line green in the active theme."
   :group 'codex-sessions)
 
 (defconst codex-sessions--empty-item 'codex-sessions--empty)
-(defconst codex-sessions--tree-path '(codex-sessions-tree))
 (defvar codex-sessions--refresh-timer nil)
 (defvar codex-sessions--last-buffer-signature nil)
 
@@ -228,6 +227,15 @@ The `success' face matches Magit's added-line green in the active theme."
     (treemacs-initialize codex-sessions-tree
       :and-do (codex-sessions--configure-buffer))))
 
+(defun codex-sessions--restore-selection (buffer)
+  "Restore point to the tree row representing BUFFER, when present."
+  (when (buffer-live-p buffer)
+    (when-let ((position
+                (text-property-any (point-min) (point-max) :buffer buffer)))
+      (goto-char position)
+      (when-let ((window (get-buffer-window (current-buffer) t)))
+        (set-window-point window position)))))
+
 (defun codex-sessions--redraw ()
   "Redraw the sidebar from current in-memory notifier state."
   (when codex-sessions--refresh-timer
@@ -236,10 +244,12 @@ The `success' face matches Magit's added-line green in the active theme."
   (when-let ((buffer (get-buffer codex-sessions-buffer-name)))
     (when (get-buffer-window buffer t)
       (with-current-buffer buffer
-        (condition-case nil
-            (treemacs-update-node codex-sessions--tree-path t)
-          (error (codex-sessions--initialize-buffer buffer)))
-        (codex-sessions--update-header)
+        ;; A notification changing state can also reorder the rows.  Rebuilding
+        ;; this small tree is more reliable than incrementally collapsing and
+        ;; reopening Treemacs' invisible variadic root after focus has moved.
+        (let ((selected-buffer (codex-sessions--buffer-at-point)))
+          (codex-sessions--initialize-buffer buffer)
+          (codex-sessions--restore-selection selected-buffer))
         (setq codex-sessions--last-buffer-signature
               (codex-sessions--buffer-signature))))))
 
