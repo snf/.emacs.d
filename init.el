@@ -1892,6 +1892,14 @@ See `find-name-arg' to customize the arguments."
   :config
   (codex-attn-mode 1))
 
+(use-package codex-sessions
+  :straight nil
+  :ensure nil
+  :load-path "lisp"
+  :after (codex-attn treemacs)
+  :commands (codex-sessions-toggle codex-sessions-show)
+  :bind (("C-x p a" . codex-sessions-toggle)))
+
 (use-package codex-history
   :straight nil
   :ensure nil

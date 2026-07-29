@@ -70,6 +70,13 @@ Each entry is:
 (defvar codex-attn--blink-on nil)
 (defvar codex-attn--visible-pending nil)
 
+(defvar codex-attn-state-change-hook nil
+  "Hook run after Codex attention or terminal-buffer state changes.
+
+Functions on this hook receive no arguments.  Consumers should use the public
+query functions such as `codex-attn-buffers' and
+`codex-attn-buffer-needs-attention-p' instead of modifying notifier state.")
+
 (defun codex-attn--new-id (kind)
   (substring
    (secure-hash 'sha256
@@ -142,7 +149,8 @@ Each entry is:
   (setq-local codex-attn--terminal-cleaned-up nil)
   (puthash codex-attn-terminal-id (current-buffer)
            codex-attn--terminal-id->buffer)
-  (add-hook 'kill-buffer-hook #'codex-attn--terminal-buffer-killed nil t))
+  (add-hook 'kill-buffer-hook #'codex-attn--terminal-buffer-killed nil t)
+  (run-hooks 'codex-attn-state-change-hook))
 
 ;; Ghostel runs this mode hook before starting the child process, so both IDs
 ;; become part of that process' environment without changing Codex itself.
@@ -204,6 +212,25 @@ Each entry is:
                    (or (null target) (eq buf-provider target)))
           (push buf out))))
     (nreverse out)))
+
+(defun codex-attn-buffers (&optional provider)
+  "Return live notifier buffers, optionally restricted to PROVIDER.
+
+The returned buffer objects retain their identity when their names change."
+  (codex-attn--terminal-buffers provider))
+
+(defun codex-attn-buffer-provider (buffer)
+  "Return the notifier provider associated with BUFFER, or nil."
+  (codex-attn--buffer-provider buffer))
+
+(defun codex-attn-provider-buffer-prefix (provider)
+  "Return the configured buffer-name prefix for PROVIDER."
+  (codex-attn--provider-buffer-prefix provider))
+
+(defun codex-attn-buffer-needs-attention-p (buffer)
+  "Return non-nil when BUFFER has an actionable pending session."
+  (and (buffer-live-p buffer)
+       (consp (gethash buffer codex-attn--sessions-by-buffer))))
 
 ;; (defalias 'codex-attn--vterm-buffers #'codex-attn--terminal-buffers)
 
@@ -453,7 +480,8 @@ Each entry is:
   (if codex-attn--visible-pending
       (codex-attn--start-blink)
     (codex-attn--stop-blink))
-  (force-mode-line-update))
+  (force-mode-line-update)
+  (run-hooks 'codex-attn-state-change-hook))
 
 (defun codex-attn--terminal-buffer-killed ()
   "Remove state owned by the current terminal buffer, idempotently."

@@ -92,6 +92,25 @@ the new buffer, using `ghostel-mode' unless MODE is supplied."
     (should (eq (codex-attn--buffer-provider buf) 'opencode))
     (should (codex-attn--provider-terminal-buffer-p buf 'opencode))))
 
+(ert-deftest codex-attn-public-buffer-status-api ()
+  (codex-attn-test--with-state
+    (codex-attn-test--with-buffers
+        ((buf "*codex: public-api*" "/tmp/"))
+      (puthash buf (list 'pending) codex-attn--sessions-by-buffer)
+      (should (memq buf (codex-attn-buffers 'codex)))
+      (should (eq (codex-attn-buffer-provider buf) 'codex))
+      (should (equal (codex-attn-provider-buffer-prefix 'codex) "*codex: "))
+      (should (codex-attn-buffer-needs-attention-p buf)))))
+
+(ert-deftest codex-attn-state-change-hook-runs-after-indicator-update ()
+  (let* ((calls 0)
+         (codex-attn-state-change-hook
+          (list (lambda () (setq calls (1+ calls))))))
+    (cl-letf (((symbol-function 'codex-attn--start-blink) #'ignore)
+              ((symbol-function 'codex-attn--stop-blink) #'ignore))
+      (codex-attn--update-indicator))
+    (should (= 1 calls))))
+
 (ert-deftest codex-attn-ghostel-environment-has-stable-identities ()
   (codex-attn-test--with-state
     (codex-attn-test--with-buffers
