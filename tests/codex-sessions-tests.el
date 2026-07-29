@@ -176,6 +176,34 @@ Each item in SPECS is (SYMBOL NAME)."
           (when (buffer-live-p panel)
             (kill-buffer panel)))))))
 
+(ert-deftest codex-sessions-navigation-wraps-in-both-directions ()
+  (codex-sessions-test--with-state
+    (codex-sessions-test--with-buffers
+        ((alpha "*codex: alpha*")
+         (beta "*codex: beta*")
+         (zeta "*codex: zeta*"))
+      (let ((panel (generate-new-buffer " *codex-sessions-cycle-test*")))
+        (unwind-protect
+            (progn
+              (switch-to-buffer panel)
+              (codex-sessions--initialize-buffer panel)
+              (codex-sessions-next-line)
+              (should (eq (codex-sessions--buffer-at-point) alpha))
+              (codex-sessions-next-line)
+              (should (eq (codex-sessions--buffer-at-point) beta))
+              (codex-sessions-next-line)
+              (should (eq (codex-sessions--buffer-at-point) zeta))
+              (codex-sessions-next-line)
+              (should (eq (codex-sessions--buffer-at-point) alpha))
+              (codex-sessions-previous-line)
+              (should (eq (codex-sessions--buffer-at-point) zeta))
+              (should (eq (lookup-key (current-local-map) (kbd "<down>"))
+                          #'codex-sessions-next-line))
+              (should (eq (lookup-key (current-local-map) (kbd "C-p"))
+                          #'codex-sessions-previous-line)))
+          (when (buffer-live-p panel)
+            (kill-buffer panel)))))))
+
 (provide 'codex-sessions-tests)
 
 ;;; codex-sessions-tests.el ends here

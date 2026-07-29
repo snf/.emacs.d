@@ -168,6 +168,54 @@ The `success' face matches Magit's added-line green in the active theme."
       (goto-char point)
       (codex-sessions-visit))))
 
+(defun codex-sessions--row-positions ()
+  "Return buffer positions for all visible session tree rows."
+  (let ((position (point-min))
+        button
+        rows)
+    (while (setq button (next-button position))
+      (let ((button-position (if (markerp button)
+                                 (marker-position button)
+                               button)))
+        (when (= 0 (or (treemacs-button-get button :depth) -1))
+          (push button-position rows))
+        (setq position (1+ button-position))))
+    (nreverse rows)))
+
+(defun codex-sessions--move-row (direction)
+  "Move to the next session row in DIRECTION, wrapping at either end."
+  (let* ((rows (codex-sessions--row-positions))
+         (button (treemacs-current-button))
+         (current (cond
+                   ((markerp button) (marker-position button))
+                   ((integer-or-marker-p button) button)
+                   (t (point))))
+         (target
+          (pcase direction
+            ('next (or (seq-find (lambda (position) (> position current)) rows)
+                       (car rows)))
+            ('previous
+             (or (car (last (seq-filter
+                             (lambda (position) (< position current))
+                             rows)))
+                 (car (last rows)))))))
+    (when target
+      (goto-char target)
+      (treemacs--evade-image)
+      (hl-line-highlight)
+      (when-let ((window (get-buffer-window (current-buffer) t)))
+        (set-window-point window (point))))))
+
+(defun codex-sessions-next-line ()
+  "Select the next session row, wrapping to the first after the last."
+  (interactive)
+  (codex-sessions--move-row 'next))
+
+(defun codex-sessions-previous-line ()
+  "Select the previous session row, wrapping to the last before the first."
+  (interactive)
+  (codex-sessions--move-row 'previous))
+
 (treemacs-define-leaf-node-type codex-sessions-session
   :icon (codex-sessions--item-icon item)
   :label (codex-sessions--item-label item)
@@ -217,6 +265,10 @@ The `success' face matches Magit's added-line green in the active theme."
   (let ((map (copy-keymap treemacs-mode-map)))
     (define-key map (kbd "g") #'codex-sessions-refresh)
     (define-key map (kbd "q") #'codex-sessions-quit)
+    (dolist (key '("n" "<down>" "C-n"))
+      (define-key map (kbd key) #'codex-sessions-next-line))
+    (dolist (key '("p" "<up>" "C-p"))
+      (define-key map (kbd key) #'codex-sessions-previous-line))
     (define-key map [mouse-1] #'codex-sessions-visit-mouse)
     (use-local-map map))
   (codex-sessions--update-header))
