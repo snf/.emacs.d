@@ -65,6 +65,13 @@
   )
 
 ;; === packages ===
+(defun my/ghostel-project-new ()
+  "Start a fresh Ghostel terminal in the current project's root."
+  (interactive)
+  ;; A non-numeric prefix argument tells `ghostel-project' not to reuse
+  ;; an existing terminal for this project.
+  (ghostel-project '(4)))
+
 (use-package project
   ;; :after vterm
   :bind (:map project-prefix-map
@@ -72,7 +79,7 @@
               ("c" . codex-in-project)
               ("o" . opencode-in-project)
               ;; ("v" . vterm-in-project)
-              ("v" . ghostel-project)
+              ("v" . my/ghostel-project-new)
               )
   :custom
   (vc-directory-exclusion-list '("node_modules" "memoizeFs_cache" "contract_graphs" ".git" "target"))
@@ -83,7 +90,7 @@
   (add-to-list 'project-switch-commands '(codex-in-project "Codex") t)
   (add-to-list 'project-switch-commands '(opencode-in-project "OpenCode") t)
   ;; (add-to-list 'project-switch-commands '(vterm-in-project "Vterm") t)
-  (add-to-list 'project-switch-commands '(ghostel-project "Ghostel") t)
+  (add-to-list 'project-switch-commands '(my/ghostel-project-new "New Ghostel") t)
   ;; Include vterm buffers (e.g. codex/opencode) in `project-kill-buffers`.
   ;; (add-to-list 'project-kill-buffer-conditions '(derived-mode . vterm-mode) t)
 
