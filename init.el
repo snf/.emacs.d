@@ -606,6 +606,8 @@
                      :files (:defaults "etc" "src" "vendor" "build.zig"
                                       "build.zig.zon" "symbols.map"))
   :commands (ghostel ghostel-project codex-in-project opencode-in-project)
+  :custom
+  (ghostel-shell "/bin/bash")
   :config
   (defun run-command-in-ghostel-project (command &optional buffer-label)
     "Open Ghostel in the project root and execute COMMAND.
