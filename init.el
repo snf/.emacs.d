@@ -1523,14 +1523,22 @@ List these clarification points, and await further instructions before continuin
   (claude-code-ide-emacs-tools-setup) ; Optionally enable Emacs MCP tools
   )
 
+(use-package whisper-input
+  :straight nil
+  :ensure nil
+  :load-path "lisp")
+
 (use-package whisper
   :straight (:host github :repo "natrys/whisper.el" :files ("*.el"))
   :bind (("C-c w" . my/whisper-transcribe)
          ("C-c M-w" . my/whisper-translate))
   :config
   (setq whisper-install-directory "/tmp/"
-        whisper--ffmpeg-input-format "alsa"
-        whisper--ffmpeg-input-device "hw:2"
+        ;; Follow the microphone selected by the host's PulseAudio/PipeWire
+        ;; server.  Each Whisper recording starts a new FFmpeg stream and
+        ;; therefore resolves `default' again.
+        whisper--ffmpeg-input-format "pulse"
+        whisper--ffmpeg-input-device "default"
         ;; whisper-install-directory "~/.emacs.d/whisper/"
         ;; whisper-model "base"
         ;; whisper-model "medium"
@@ -1913,6 +1921,13 @@ See `find-name-arg' to customize the arguments."
   :load-path "lisp"
   :commands (codex-history-insert-prompt)
   :bind (("C-x C-p" . codex-history-insert-prompt)))
+
+(use-package codex-voice
+  :straight nil
+  :ensure nil
+  :load-path "lisp"
+  :defer nil
+  :bind (("C-c C-w" . codex-voice-dictate-followup)))
 
 (use-package emacs-defunct-cleaner
   :straight nil

@@ -134,6 +134,45 @@ def _debug_log(provider, payload, event):
         pass
 
 
+def _read_json_file(path):
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else None
+    except (OSError, ValueError, TypeError):
+        return None
+
+
+def _atomic_write_json(path, data):
+    directory = os.path.dirname(path)
+    os.makedirs(directory, mode=0o700, exist_ok=True)
+    fd, tmp_path = tempfile.mkstemp(
+        prefix=f".{os.path.basename(path)}.", suffix=".tmp", dir=directory
+    )
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=True)
+        os.replace(tmp_path, path)
+    finally:
+        try:
+            os.unlink(tmp_path)
+        except FileNotFoundError:
+            pass
+
+
+def _same_completed_turn(old, data):
+    turn_id = data.get("turn_id")
+    return (
+        turn_id is not None
+        and isinstance(old, dict)
+        and old.get("thread_id") == data.get("thread_id")
+        and old.get("provider") == data.get("provider")
+        and old.get("turn_id") == turn_id
+        and old.get("emacs_instance_id") == data.get("emacs_instance_id")
+        and old.get("terminal_id") == data.get("terminal_id")
+    )
+
+
 def main():
     provider, configured_state_dir, payload_arg, provider_explicit = _parse_args()
     payload = _read_payload(payload_arg)
@@ -188,13 +227,11 @@ def main():
     path = os.path.join(state_dir, f"{thread_id}.json")
     now = time.time()
     pending_since = now
-    old = None
-    if os.path.exists(path):
+    old = _read_json_file(path)
+    if old:
         try:
-            with open(path, "r", encoding="utf-8") as f:
-                old = json.load(f)
             pending_since = float(old.get("pending_since", pending_since))
-        except Exception:
+        except (TypeError, ValueError):
             pass
 
     turn_id = _pick_any(event, "turn_id", "turnId", "turn-id")
@@ -219,6 +256,12 @@ def main():
             "assistantMessage",
             "message",
         ),
+        "input_messages": _pick_any(
+            event,
+            "input_messages",
+            "inputMessages",
+            "input-messages",
+        ),
         "pending_since": pending_since,
         "last_event_ts": now,
         "type": _pick_any(event, "type", "event_type", "eventType"),
@@ -226,32 +269,29 @@ def main():
         "terminal_id": terminal_id,
     }
 
+    # Attention files are deliberately deleted once Emacs displays their
+    # terminal.  Keep a separate per-terminal record so integrations such as
+    # voice follow-ups can still ground the next message in the last completed
+    # Codex turn.
+    if provider == "codex":
+        context_dir = os.environ.get("CODEX_CONTEXT_STATE_DIR")
+        if not context_dir:
+            cache_home = os.environ.get(
+                "XDG_CACHE_HOME", os.path.expanduser("~/.cache")
+            )
+            context_dir = os.path.join(cache_home, "codex", "contexts")
+        context_path = os.path.join(context_dir, f"{terminal_id}.json")
+        context_old = _read_json_file(context_path)
+        if not _same_completed_turn(context_old, data):
+            _atomic_write_json(context_path, data)
+
     # Codex can deliver the same completed-turn notification more than once.
     # Avoid rewriting the file in that case: besides needless I/O, every replace
     # wakes Emacs' file watcher.  A missing turn id is not safe to deduplicate.
-    if (
-        turn_id is not None
-        and isinstance(old, dict)
-        and old.get("thread_id") == thread_id
-        and old.get("provider") == provider
-        and old.get("turn_id") == turn_id
-        and old.get("emacs_instance_id") == emacs_instance_id
-        and old.get("terminal_id") == terminal_id
-    ):
+    if _same_completed_turn(old, data):
         return 0
 
-    fd, tmp_path = tempfile.mkstemp(
-        prefix=f".{thread_id}.", suffix=".tmp", dir=state_dir
-    )
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=True)
-        os.replace(tmp_path, path)
-    finally:
-        try:
-            os.unlink(tmp_path)
-        except FileNotFoundError:
-            pass
+    _atomic_write_json(path, data)
     return 0
 
 
