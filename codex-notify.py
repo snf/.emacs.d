@@ -6,6 +6,10 @@ import tempfile
 import time
 
 
+CONTEXT_MESSAGE_MAX_CHARS = 16_384
+CONTEXT_TRUNCATION_MARKER = "\n...[truncated]...\n"
+
+
 def _pick(event, *keys):
     for key in keys:
         value = event.get(key)
@@ -173,6 +177,35 @@ def _same_completed_turn(old, data):
     )
 
 
+def _bounded_context_text(value):
+    if not isinstance(value, str):
+        return None
+    if len(value) <= CONTEXT_MESSAGE_MAX_CHARS:
+        return value
+
+    remaining = CONTEXT_MESSAGE_MAX_CHARS - len(CONTEXT_TRUNCATION_MARKER)
+    head = remaining // 2
+    tail = remaining - head
+    return value[:head] + CONTEXT_TRUNCATION_MARKER + value[-tail:]
+
+
+def _last_user_message(value):
+    if isinstance(value, str):
+        return _bounded_context_text(value)
+    if not isinstance(value, list):
+        return None
+
+    for message in reversed(value):
+        if isinstance(message, str):
+            return _bounded_context_text(message)
+        if isinstance(message, dict):
+            for key in ("text", "content", "message"):
+                text = message.get(key)
+                if isinstance(text, str):
+                    return _bounded_context_text(text)
+    return None
+
+
 def main():
     provider, configured_state_dir, payload_arg, provider_explicit = _parse_args()
     payload = _read_payload(payload_arg)
@@ -235,7 +268,14 @@ def main():
             pass
 
     turn_id = _pick_any(event, "turn_id", "turnId", "turn-id")
+    input_messages = _pick_any(
+        event,
+        "input_messages",
+        "inputMessages",
+        "input-messages",
+    )
     data = {
+        "state_version": 2,
         "thread_id": thread_id,
         "provider": provider,
         "turn_id": turn_id,
@@ -247,20 +287,16 @@ def main():
             "workingDirectory",
             "path",
         ),
-        "last_assistant_message": _pick_any(
-            event,
-            "last_assistant_message",
-            "lastAssistantMessage",
-            "last-assistant-message",
-            "assistant_message",
-            "assistantMessage",
-            "message",
-        ),
-        "input_messages": _pick_any(
-            event,
-            "input_messages",
-            "inputMessages",
-            "input-messages",
+        "last_assistant_message": _bounded_context_text(
+            _pick_any(
+                event,
+                "last_assistant_message",
+                "lastAssistantMessage",
+                "last-assistant-message",
+                "assistant_message",
+                "assistantMessage",
+                "message",
+            )
         ),
         "pending_since": pending_since,
         "last_event_ts": now,
@@ -282,13 +318,26 @@ def main():
             context_dir = os.path.join(cache_home, "codex", "contexts")
         context_path = os.path.join(context_dir, f"{terminal_id}.json")
         context_old = _read_json_file(context_path)
-        if not _same_completed_turn(context_old, data):
-            _atomic_write_json(context_path, data)
+        context_data = {
+            **data,
+            "context_version": 2,
+            "last_user_message": _last_user_message(input_messages),
+        }
+        if (
+            not isinstance(context_old, dict)
+            or context_old.get("context_version") != 2
+            or not _same_completed_turn(context_old, context_data)
+        ):
+            _atomic_write_json(context_path, context_data)
 
     # Codex can deliver the same completed-turn notification more than once.
     # Avoid rewriting the file in that case: besides needless I/O, every replace
     # wakes Emacs' file watcher.  A missing turn id is not safe to deduplicate.
-    if _same_completed_turn(old, data):
+    if (
+        isinstance(old, dict)
+        and old.get("state_version") == 2
+        and _same_completed_turn(old, data)
+    ):
         return 0
 
     _atomic_write_json(path, data)

@@ -83,11 +83,38 @@ class CodexNotifyTests(unittest.TestCase):
             }
         )
         data = self.read_context()
+        self.assertEqual(data["state_version"], 2)
+        self.assertEqual(data["context_version"], 2)
         self.assertEqual(data["thread_id"], "thread-1")
-        self.assertEqual(data["input_messages"], ["Please compare both approaches"])
+        self.assertEqual(data["last_user_message"], "Please compare both approaches")
+        self.assertNotIn("input_messages", data)
+        self.assertNotIn("input_messages", self.read())
         self.assertEqual(
             data["last_assistant_message"], "Which approach should I implement?"
         )
+
+    def test_context_messages_are_bounded_and_only_the_last_user_message_is_kept(self):
+        long_assistant = "A" * 40_000
+        long_user = "B" * 40_000
+        self.notify(
+            {
+                "type": "agent-turn-complete",
+                "thread-id": "thread-1",
+                "turn-id": "turn-1",
+                "input-messages": ["old message", long_user],
+                "last-assistant-message": long_assistant,
+            }
+        )
+
+        context = self.read_context()
+        attention = self.read()
+        self.assertEqual(len(context["last_user_message"]), 16_384)
+        self.assertEqual(len(context["last_assistant_message"]), 16_384)
+        self.assertEqual(len(attention["last_assistant_message"]), 16_384)
+        self.assertIn("...[truncated]...", context["last_user_message"])
+        self.assertNotIn("old message", context["last_user_message"])
+        self.assertNotIn("input_messages", context)
+        self.assertNotIn("input_messages", attention)
 
     def test_exact_duplicate_does_not_rewrite(self):
         event = {
@@ -104,6 +131,37 @@ class CodexNotifyTests(unittest.TestCase):
         self.notify(event)
         self.assertEqual(path.stat().st_mtime_ns, before)
         self.assertEqual(context_path.stat().st_mtime_ns, context_before)
+
+    def test_duplicate_from_old_schema_is_rewritten_without_full_history(self):
+        self.state_dir.mkdir(parents=True)
+        self.context_dir.mkdir(parents=True)
+        old = {
+            "thread_id": "thread-1",
+            "provider": "codex",
+            "turn_id": "turn-1",
+            "emacs_instance_id": "emacs-1",
+            "terminal_id": "terminal-1",
+            "input_messages": ["old", "latest"],
+        }
+        (self.state_dir / "thread-1.json").write_text(json.dumps(old))
+        (self.context_dir / "terminal-1.json").write_text(json.dumps(old))
+
+        self.notify(
+            {
+                "type": "agent-turn-complete",
+                "thread_id": "thread-1",
+                "turn_id": "turn-1",
+                "input_messages": ["old", "latest"],
+            }
+        )
+
+        attention = self.read()
+        context = self.read_context()
+        self.assertEqual(attention["state_version"], 2)
+        self.assertEqual(context["context_version"], 2)
+        self.assertEqual(context["last_user_message"], "latest")
+        self.assertNotIn("input_messages", attention)
+        self.assertNotIn("input_messages", context)
 
     def test_new_turn_preserves_pending_since(self):
         base = {

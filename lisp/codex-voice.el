@@ -18,9 +18,9 @@
 (declare-function whisper-transcribing-p "whisper" ())
 (declare-function whisper-run "whisper" (&optional arg))
 
-(defvar whisper-after-transcription-hook)
-(defvar whisper-insert-text-at-point)
-(defvar whisper-translate)
+(defvar whisper-after-transcription-hook nil)
+(defvar whisper-insert-text-at-point nil)
+(defvar whisper-translate nil)
 
 (defgroup codex-voice nil
   "Context-aware dictated follow-ups for Codex in Ghostel."
@@ -56,6 +56,10 @@
 A prefix argument to `codex-voice-dictate-followup' reverses this for one
 dictation, leaving the polished text in the Codex composer for review."
   :type 'boolean)
+
+(defcustom codex-voice-capture-timeout 600
+  "Seconds after which an unfinished dictated capture releases its state."
+  :type 'number)
 
 (defcustom codex-voice-context-dir
   (expand-file-name "codex/contexts"
@@ -99,15 +103,18 @@ dictation, leaving the polished text in the Codex composer for review."
 
 (defun codex-voice--formatter-prompt (context dictation)
   "Build the formatter prompt from CONTEXT and DICTATION."
-  (let ((payload
-         (json-encode
-          `((last_user_messages . ,(or (plist-get context :input_messages)
-                                      []))
-            (last_codex_message . ,(plist-get context :last_assistant_message))
-            (dictated_follow_up . ,dictation)))))
+  (let* ((legacy-messages (plist-get context :input_messages))
+         (last-user-message
+          (or (plist-get context :last_user_message)
+              (and (listp legacy-messages) (car (last legacy-messages)))))
+         (payload
+          (json-encode
+           `((last_user_message . ,last-user-message)
+             (last_codex_message . ,(plist-get context :last_assistant_message))
+             (dictated_follow_up . ,dictation)))))
     (concat
      "Prepare the user's next response in an existing Codex conversation. "
-     "Use last_codex_message and last_user_messages to understand what the "
+     "Use last_codex_message and last_user_message to understand what the "
      "dictated response refers to and adapt it to that conversational context.\n\n"
      codex-voice-transcript-instruction
      " Preserve every substantive request, choice, constraint, correction, "
@@ -213,9 +220,39 @@ dictation, leaving the polished text in the Codex composer for review."
 
 (defun codex-voice--clear-capture ()
   "Remove any installed one-shot Whisper capture hook."
-  (when-let ((hook (plist-get codex-voice--capture :hook)))
-    (remove-hook 'whisper-after-transcription-hook hook))
-  (setq codex-voice--capture nil))
+  (let ((capture codex-voice--capture))
+    ;; Clear the global first so cleanup triggered from a timer or kill hook is
+    ;; idempotent and cannot observe half-released state.
+    (setq codex-voice--capture nil)
+    (when-let ((hook (plist-get capture :hook)))
+      (remove-hook 'whisper-after-transcription-hook hook))
+    (when-let ((timer (plist-get capture :timer)))
+      (when (timerp timer)
+        (cancel-timer timer)))
+    (when-let ((target (plist-get capture :target)))
+      (when (buffer-live-p target)
+        (with-current-buffer target
+          (remove-hook 'kill-buffer-hook
+                       #'codex-voice--capture-target-killed t))))))
+
+(defun codex-voice--capture-expired (hook)
+  "Release the capture identified by HOOK after its timeout."
+  (when (eq hook (plist-get codex-voice--capture :hook))
+    (codex-voice--clear-capture)
+    (message "Codex voice capture expired and released its context")))
+
+(defun codex-voice--capture-target-killed ()
+  "Release a capture whose originating terminal is being killed."
+  (when (eq (current-buffer) (plist-get codex-voice--capture :target))
+    (codex-voice--clear-capture)))
+
+(defun codex-voice--run-whisper-for-capture ()
+  "Run Whisper and release capture state if startup or stopping fails."
+  (condition-case err
+      (whisper-run)
+    (error
+     (codex-voice--clear-capture)
+     (signal (car err) (cdr err)))))
 
 (defun codex-voice--install-capture (target context submit)
   "Capture one Whisper transcription for TARGET with CONTEXT and SUBMIT mode."
@@ -234,10 +271,16 @@ dictation, leaving the polished text in the Codex composer for review."
                    target context dictation submit)
                 (error
                  (message "Could not start Codex voice formatter: %s"
-                          (error-message-string err)))))))))
+                          (error-message-string err))))))))
+       (timer
+        (run-at-time (max 1 codex-voice-capture-timeout) nil
+                     #'codex-voice--capture-expired hook)))
     (setq codex-voice--capture
-          (list :hook hook :target target :context context :submit submit))
-    (add-hook 'whisper-after-transcription-hook hook)))
+          (list :hook hook :target target :timer timer))
+    (with-current-buffer target
+      (add-hook 'kill-buffer-hook #'codex-voice--capture-target-killed nil t))
+    (add-hook 'whisper-after-transcription-hook hook)
+    hook))
 
 (defun codex-voice--cleanup-context ()
   "Remove the persistent context belonging to the current terminal."
@@ -276,7 +319,7 @@ the originating Ghostel buffer.  With prefix argument REVIEW, reverse
   (require 'whisper)
   (cond
    ((and codex-voice--capture (whisper-recording-p))
-    (whisper-run))
+    (codex-voice--run-whisper-for-capture))
    ((and codex-voice--capture (whisper-transcribing-p))
     (user-error "Whisper is already transcribing this Codex follow-up"))
    ((or (whisper-recording-p) (whisper-transcribing-p))
@@ -301,7 +344,7 @@ the originating Ghostel buffer.  With prefix argument REVIEW, reverse
             ;; raw transcription is captured and erased by our one-shot hook.
             (setq-local whisper-insert-text-at-point nil)
             (setq-local whisper-translate nil)
-            (whisper-run))
+            (codex-voice--run-whisper-for-capture))
         (if had-local-insert
             (setq-local whisper-insert-text-at-point old-insert)
           (kill-local-variable 'whisper-insert-text-at-point)))))))
