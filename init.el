@@ -1913,7 +1913,7 @@ See `find-name-arg' to customize the arguments."
   :straight nil
   :ensure nil
   :load-path "lisp"
-  :after (codex-attn treemacs)
+  :after codex-attn
   :commands (codex-sessions-toggle codex-sessions-show)
   :bind (("C-x p a" . codex-sessions-toggle)))
 
