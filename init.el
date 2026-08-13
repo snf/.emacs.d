@@ -663,7 +663,8 @@ DIRECTORY, when non-nil, is used instead of discovering the current project."
     "Launch a Codex TUI in PROJECT-ROOT through PROXY at ENDPOINT."
     (let ((buffer
            (run-command-in-ghostel-project
-            (codex-app-server-tui-command endpoint) "codex" project-root)))
+            (codex-app-server-tui-command project-root endpoint)
+            "codex" project-root)))
       (with-current-buffer buffer
         (setq-local codex--app-server-proxy proxy)
         (add-hook 'kill-buffer-hook #'codex--stop-buffer-proxy nil t))
@@ -681,7 +682,7 @@ DIRECTORY, when non-nil, is used instead of discovering the current project."
     "Resume THREAD-ID in a Codex TUI rooted at PROJECT-ROOT."
     (let ((buffer
            (run-command-in-ghostel-project
-            (codex-app-server-tui-command nil thread-id)
+            (codex-app-server-tui-command project-root nil thread-id)
             "codex" project-root)))
       (codex-attn-bind-buffer-thread buffer thread-id)
       (codex--queue-buffer buffer)))

@@ -82,12 +82,15 @@
 (ert-deftest codex-app-server-builds-new-and-resume-tui-commands ()
   (let ((codex-app-server-codex-program "/tmp/Codex CLI"))
     (should
-     (equal (codex-app-server-tui-command "ws://127.0.0.1:1234")
-            "/tmp/Codex\\ CLI --remote ws\\://127.0.0.1\\:1234"))
+     (equal (codex-app-server-tui-command
+             "/tmp/project root" "ws://127.0.0.1:1234")
+            (concat "/tmp/Codex\\ CLI -C /tmp/project\\ root "
+                    "--remote ws\\://127.0.0.1\\:1234")))
     (should
      (equal (codex-app-server-tui-command
-             "ws://127.0.0.1:1234" "thread id")
-            "/tmp/Codex\\ CLI resume --remote ws\\://127.0.0.1\\:1234 thread\\ id"))))
+             "/tmp/project root" "ws://127.0.0.1:1234" "thread id")
+            (concat "/tmp/Codex\\ CLI -C /tmp/project\\ root "
+                    "--remote ws\\://127.0.0.1\\:1234 resume thread\\ id")))))
 
 (provide 'codex-app-server-tests)
 

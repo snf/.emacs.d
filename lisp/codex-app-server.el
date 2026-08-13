@@ -277,16 +277,17 @@ ERROR-CALLBACK if the proxy exits before or during use."
     (funcall callback thread-id)))
 
 ;;;###autoload
-(defun codex-app-server-tui-command (&optional endpoint thread-id)
+(defun codex-app-server-tui-command (directory &optional endpoint thread-id)
   "Return a shell command for a remote Codex TUI.
 
-Use ENDPOINT or `codex-app-server-endpoint'.  When THREAD-ID is non-nil,
+Use DIRECTORY as the explicit Codex working root and ENDPOINT or
+`codex-app-server-endpoint' as the remote server.  When THREAD-ID is non-nil,
 resume that thread instead of starting a new one."
   (mapconcat
    #'shell-quote-argument
-   (append (list codex-app-server-codex-program)
-           (when thread-id (list "resume"))
+   (append (list codex-app-server-codex-program "-C" directory)
            (list "--remote" (or endpoint codex-app-server-endpoint))
+           (when thread-id (list "resume"))
            (when thread-id (list thread-id)))
    " "))
 
