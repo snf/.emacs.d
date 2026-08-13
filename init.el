@@ -605,7 +605,8 @@
   :straight (ghostel :type git :host github :repo "dakra/ghostel"
                      :files (:defaults "etc" "src" "vendor" "build.zig"
                                       "build.zig.zon" "symbols.map"))
-  :commands (ghostel ghostel-project codex-in-project opencode-in-project)
+  :commands (ghostel ghostel-project codex-in-project
+                     codex-resume-in-project opencode-in-project)
   :custom
   (ghostel-shell "/bin/bash")
   :config
