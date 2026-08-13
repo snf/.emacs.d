@@ -12,15 +12,16 @@ SCRIPT = Path(__file__).resolve().parents[1] / "codex-app-server-proxy.py"
 
 
 class CodexAppServerProxyTests(unittest.IsolatedAsyncioTestCase):
-    async def test_relays_protocol_and_reports_started_thread(self):
+    async def test_relays_overlapping_clients_and_reports_threads(self):
         async def upstream_handler(websocket: ServerConnection) -> None:
             async for raw in websocket:
                 message = json.loads(raw)
+                thread_id = message["params"]["threadId"]
                 await websocket.send(
                     json.dumps(
                         {
                             "id": message["id"],
-                            "result": {"thread": {"id": "thread-from-server"}},
+                            "result": {"thread": {"id": thread_id}},
                         }
                     )
                 )
@@ -39,23 +40,39 @@ class CodexAppServerProxyTests(unittest.IsolatedAsyncioTestCase):
             ready = json.loads(await process.stdout.readline())
             self.assertEqual(ready["type"], "ready")
 
-            async with connect(ready["endpoint"]) as client:
-                request = {
-                    "id": "request-1",
-                    "method": "thread/start",
-                    "params": {"cwd": "/tmp/project"},
-                }
-                await client.send(json.dumps(request))
-                response = json.loads(await client.recv())
-                self.assertEqual(
-                    response["result"]["thread"]["id"], "thread-from-server"
-                )
-                event = json.loads(await process.stdout.readline())
-                self.assertEqual(
-                    event, {"type": "thread", "thread_id": "thread-from-server"}
-                )
+            try:
 
-            self.assertEqual(await asyncio.wait_for(process.wait(), 2), 0)
+                async def round_trip(client, request_id, method, thread_id):
+                    request = {
+                        "id": request_id,
+                        "method": method,
+                        "params": {"threadId": thread_id},
+                    }
+                    await client.send(json.dumps(request))
+                    response = json.loads(await client.recv())
+                    self.assertEqual(response["result"]["thread"]["id"], thread_id)
+                    event = json.loads(await process.stdout.readline())
+                    self.assertEqual(event, {"type": "thread", "thread_id": thread_id})
+
+                async with connect(ready["endpoint"]) as active_tui:
+                    await round_trip(
+                        active_tui,
+                        "request-1",
+                        "thread/start",
+                        "started-thread",
+                    )
+                    async with connect(ready["endpoint"]) as session_picker:
+                        await round_trip(
+                            session_picker,
+                            "request-2",
+                            "thread/resume",
+                            "resumed-thread",
+                        )
+
+                self.assertIsNone(process.returncode)
+            finally:
+                process.terminate()
+                await asyncio.wait_for(process.wait(), 2)
 
 
 if __name__ == "__main__":

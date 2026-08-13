@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Relay one Codex TUI connection and report its app-server thread id."""
+"""Relay connections from one Codex TUI and report its app-server thread id."""
 
 from __future__ import annotations
 
@@ -50,17 +50,11 @@ def _thread_id_from_notification(message: dict[str, Any]) -> str | None:
 
 
 async def _run_proxy(endpoint: str, host: str) -> None:
-    finished = asyncio.Event()
-    client_seen = False
+    reported_thread: str | None = None
 
     async def handler(client: ServerConnection) -> None:
-        nonlocal client_seen
-        if client_seen:
-            await client.close(code=1013, reason="proxy accepts one Codex TUI")
-            return
-        client_seen = True
+        nonlocal reported_thread
         request_methods: dict[str, str] = {}
-        reported_thread: str | None = None
 
         def report(thread_id: str | None) -> None:
             nonlocal reported_thread
@@ -69,9 +63,7 @@ async def _run_proxy(endpoint: str, host: str) -> None:
                 _emit("thread", thread_id=thread_id)
 
         try:
-            async with connect(
-                endpoint, compression=None, max_size=None
-            ) as upstream:
+            async with connect(endpoint, compression=None, max_size=None) as upstream:
 
                 async def toward_upstream() -> None:
                     async for raw in client:
@@ -79,10 +71,10 @@ async def _run_proxy(endpoint: str, host: str) -> None:
                         if message is not None:
                             request_id = message.get("id")
                             method = message.get("method")
-                            if (
-                                isinstance(request_id, (str, int))
-                                and method in {"thread/start", "thread/resume"}
-                            ):
+                            if isinstance(request_id, (str, int)) and method in {
+                                "thread/start",
+                                "thread/resume",
+                            }:
                                 request_methods[str(request_id)] = str(method)
                         await upstream.send(raw)
 
@@ -91,10 +83,9 @@ async def _run_proxy(endpoint: str, host: str) -> None:
                         message = _parse_message(raw)
                         if message is not None:
                             response_id = message.get("id")
-                            if (
-                                isinstance(response_id, (str, int))
-                                and request_methods.pop(str(response_id), None)
-                            ):
+                            if isinstance(
+                                response_id, (str, int)
+                            ) and request_methods.pop(str(response_id), None):
                                 report(_thread_id_from_result(message))
                             report(_thread_id_from_notification(message))
                         await client.send(raw)
@@ -113,14 +104,12 @@ async def _run_proxy(endpoint: str, host: str) -> None:
             _emit("error", message=str(exc))
             with contextlib.suppress(Exception):
                 await client.close(code=1011, reason="upstream connection failed")
-        finally:
-            finished.set()
 
     async with serve(handler, host, 0, compression=None, max_size=None) as server:
         socket = server.sockets[0]
         port = socket.getsockname()[1]
         _emit("ready", endpoint=f"ws://{host}:{port}")
-        await finished.wait()
+        await asyncio.Future()
 
 
 def main() -> int:

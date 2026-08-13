@@ -251,7 +251,7 @@ readable message if startup fails."
 
 ;;;###autoload
 (defun codex-app-server-start-proxy (ready-callback &optional error-callback)
-  "Start a one-client thread-binding proxy.
+  "Start a multi-connection single-TUI thread-binding proxy.
 
 Call READY-CALLBACK with the proxy process and its WebSocket endpoint.  Call
 ERROR-CALLBACK if the proxy exits before or during use."
