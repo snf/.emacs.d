@@ -609,12 +609,15 @@
   :custom
   (ghostel-shell "/bin/bash")
   :config
-  (defun run-command-in-ghostel-project (command &optional buffer-label)
+  (defun run-command-in-ghostel-project (command &optional buffer-label directory)
     "Open Ghostel in the project root and execute COMMAND.
 
-BUFFER-LABEL controls the Ghostel buffer name and defaults to COMMAND."
-    (let* ((pr (project-current))
-           (project-root (if pr (project-root pr) default-directory))
+BUFFER-LABEL controls the Ghostel buffer name and defaults to COMMAND.
+DIRECTORY, when non-nil, is used instead of discovering the current project."
+    (let* ((pr (and (null directory) (project-current)))
+           (project-root (or directory
+                             (and pr (project-root pr))
+                             default-directory))
            (default-directory project-root)
            (label (or buffer-label command))
            (project-name
@@ -629,13 +632,82 @@ BUFFER-LABEL controls the Ghostel buffer name and defaults to COMMAND."
         (ghostel-send-key "return"))
       buf))
 
+  (defvar-local codex--app-server-proxy nil)
+
+  (defun codex--project-root ()
+    "Return the selected project root without retaining dynamic state."
+    (let ((project (project-current)))
+      (expand-file-name
+       (if project (project-root project) default-directory))))
+
+  (defun codex--stop-buffer-proxy ()
+    "Stop the current Codex buffer's thread-binding proxy."
+    (when (and (boundp 'codex--app-server-proxy)
+               codex--app-server-proxy)
+      (codex-app-server-stop-proxy codex--app-server-proxy)
+      (setq codex--app-server-proxy nil)))
+
+  (defun codex--bind-remote-thread (buffer thread-id)
+    "Bind remote Codex BUFFER to THREAD-ID."
+    (when (buffer-live-p buffer)
+      (codex-attn-bind-buffer-thread buffer thread-id)))
+
+  (defun codex--queue-buffer (buffer)
+    "Add BUFFER to the Codex attention queue."
+    (when (and (buffer-live-p buffer)
+               (fboundp 'codex-attn-queue-buffer))
+      (codex-attn-queue-buffer buffer 'codex)))
+
+  (defun codex--proxy-ready (project-root proxy endpoint)
+    "Launch a Codex TUI in PROJECT-ROOT through PROXY at ENDPOINT."
+    (let ((buffer
+           (run-command-in-ghostel-project
+            (codex-app-server-tui-command endpoint) "codex" project-root)))
+      (with-current-buffer buffer
+        (setq-local codex--app-server-proxy proxy)
+        (add-hook 'kill-buffer-hook #'codex--stop-buffer-proxy nil t))
+      (codex-app-server-proxy-set-thread-callback
+       proxy (apply-partially #'codex--bind-remote-thread buffer))
+      (codex--queue-buffer buffer)))
+
+  (defun codex--launch-new-remote (project-root)
+    "Start a thread-binding proxy and Codex TUI for PROJECT-ROOT."
+    (codex-app-server-start-proxy
+     (apply-partially #'codex--proxy-ready project-root)
+     #'codex--remote-launch-failed))
+
+  (defun codex--launch-resumed-remote (project-root thread-id)
+    "Resume THREAD-ID in a Codex TUI rooted at PROJECT-ROOT."
+    (let ((buffer
+           (run-command-in-ghostel-project
+            (codex-app-server-tui-command nil thread-id)
+            "codex" project-root)))
+      (codex-attn-bind-buffer-thread buffer thread-id)
+      (codex--queue-buffer buffer)))
+
+  (defun codex--remote-launch-failed (error-message)
+    "Report a remote Codex startup ERROR-MESSAGE."
+    (display-warning 'codex-app-server error-message :error))
+
   (defun codex-in-project ()
-    "Open Ghostel in the project root and execute codex."
+    "Open a shared-app-server Codex TUI in the current project."
     (interactive)
-    (let ((buf (run-command-in-ghostel-project "codex" "codex")))
-      (when (and (buffer-live-p buf)
-                 (fboundp 'codex-attn-queue-buffer))
-        (codex-attn-queue-buffer buf 'codex))))
+    (require 'codex-app-server)
+    (let ((project-root (codex--project-root)))
+      (message "Preparing shared Codex app-server...")
+      (codex-app-server-ensure
+       (apply-partially #'codex--launch-new-remote project-root)
+       #'codex--remote-launch-failed)))
+
+  (defun codex-resume-in-project (thread-id)
+    "Resume app-server THREAD-ID in the current project."
+    (interactive "sCodex thread ID: ")
+    (require 'codex-app-server)
+    (let ((project-root (codex--project-root)))
+      (codex-app-server-ensure
+       (apply-partially #'codex--launch-resumed-remote
+                        project-root thread-id)
+       #'codex--remote-launch-failed)))
 
   (defun opencode-in-project ()
     "Open Ghostel in the project root and execute opencode."
@@ -1898,6 +1970,15 @@ See `find-name-arg' to customize the arguments."
 (put 'upcase-region 'disabled nil)
 
 (server-start)
+
+
+(use-package codex-app-server
+  :straight nil
+  :ensure nil
+  :load-path "lisp"
+  :commands (codex-app-server-ensure
+             codex-app-server-start-proxy
+             codex-app-server-tui-command))
 
 
 (use-package codex-attn

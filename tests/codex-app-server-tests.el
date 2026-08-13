@@ -79,6 +79,16 @@
       (when (process-live-p process)
         (delete-process process)))))
 
+(ert-deftest codex-app-server-builds-new-and-resume-tui-commands ()
+  (let ((codex-app-server-codex-program "/tmp/Codex CLI"))
+    (should
+     (equal (codex-app-server-tui-command "ws://127.0.0.1:1234")
+            "/tmp/Codex\\ CLI --remote ws\\://127.0.0.1\\:1234"))
+    (should
+     (equal (codex-app-server-tui-command
+             "ws://127.0.0.1:1234" "thread id")
+            "/tmp/Codex\\ CLI resume --remote ws\\://127.0.0.1\\:1234 thread\\ id"))))
+
 (provide 'codex-app-server-tests)
 
 ;;; codex-app-server-tests.el ends here

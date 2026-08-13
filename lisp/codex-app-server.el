@@ -42,6 +42,10 @@ The app-server endpoint is appended as `--endpoint ENDPOINT'."
   "Program used for non-blocking readiness probes."
   :type 'string)
 
+(defcustom codex-app-server-codex-program "codex"
+  "Codex CLI program used by remote Ghostel sessions."
+  :type 'string)
+
 (defcustom codex-app-server-python-program
   "/projects/takopi/.venv/bin/python"
   "Python interpreter containing the `websockets' package."
@@ -215,7 +219,11 @@ readable message if startup fails."
            (codex-app-server--proxy-emit-thread
             process (plist-get message :thread_id)))
           ("error"
-           (message "Codex TUI proxy: %s" (plist-get message :message)))))
+           (let ((error-message (plist-get message :message)))
+             (if-let ((callback
+                       (process-get process 'codex-error-callback)))
+                 (funcall callback error-message)
+               (message "Codex TUI proxy: %s" error-message))))))
     (error
      (message "Codex TUI proxy emitted invalid data: %s" line))))
 
@@ -231,7 +239,9 @@ readable message if startup fails."
 
 (defun codex-app-server--proxy-sentinel (process _event)
   (when (and (memq (process-status process) '(exit signal))
-             (not (process-get process 'codex-proxy-stopping)))
+             (not (process-get process 'codex-proxy-stopping))
+             (or (not (zerop (process-exit-status process)))
+                 (null (process-get process 'codex-proxy-endpoint))))
     (let ((message-text
            (format "Codex TUI proxy exited with status %d"
                    (process-exit-status process))))
@@ -265,6 +275,20 @@ ERROR-CALLBACK if the proxy exits before or during use."
   (process-put process 'codex-thread-callback callback)
   (when-let ((thread-id (process-get process 'codex-thread-id)))
     (funcall callback thread-id)))
+
+;;;###autoload
+(defun codex-app-server-tui-command (&optional endpoint thread-id)
+  "Return a shell command for a remote Codex TUI.
+
+Use ENDPOINT or `codex-app-server-endpoint'.  When THREAD-ID is non-nil,
+resume that thread instead of starting a new one."
+  (mapconcat
+   #'shell-quote-argument
+   (append (list codex-app-server-codex-program)
+           (when thread-id (list "resume"))
+           (list "--remote" (or endpoint codex-app-server-endpoint))
+           (when thread-id (list thread-id)))
+   " "))
 
 ;;;###autoload
 (defun codex-app-server-stop-proxy (process)
