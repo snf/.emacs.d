@@ -60,6 +60,7 @@ Each entry is:
 (defvar codex-attn--pending-sessions nil)
 (defvar codex-attn--actionable-session-list nil)
 (defvar codex-attn--terminal-id->buffer (make-hash-table :test 'equal))
+(defvar codex-attn--thread-id->buffer (make-hash-table :test 'equal))
 (defvar codex-attn--sessions-by-buffer (make-hash-table :test 'eq))
 (defvar codex-attn--state-cache (make-hash-table :test 'equal))
 (defvar codex-attn--snoozed-until (make-hash-table :test 'equal))
@@ -88,6 +89,7 @@ query functions such as `codex-attn-buffers' and
 ;; process gets a new value, while months-long sessions retain one identity.
 (defvar codex-attn--emacs-instance-id (codex-attn--new-id "emacs"))
 (defvar-local codex-attn-terminal-id nil)
+(defvar-local codex-attn-thread-id nil)
 (defvar-local codex-attn--terminal-cleaned-up nil)
 
 (defvar codex-attn--modeline-map
@@ -236,11 +238,14 @@ The returned buffer objects retain their identity when their names change."
 
 (defun codex-attn--rebuild-buffer-index ()
   (clrhash codex-attn--terminal-id->buffer)
+  (clrhash codex-attn--thread-id->buffer)
   (dolist (buf (codex-attn--terminal-buffers))
     (with-current-buffer buf
       (unless codex-attn-terminal-id
         (codex-attn--ghostel-setup))
-      (puthash codex-attn-terminal-id buf codex-attn--terminal-id->buffer))))
+      (puthash codex-attn-terminal-id buf codex-attn--terminal-id->buffer)
+      (when codex-attn-thread-id
+        (puthash codex-attn-thread-id buf codex-attn--thread-id->buffer)))))
 
 (defun codex-attn--buffer-for-terminal-id (terminal-id)
   (let ((buf (and terminal-id
@@ -250,6 +255,40 @@ The returned buffer objects retain their identity when their names change."
       (when terminal-id
         (remhash terminal-id codex-attn--terminal-id->buffer))
       nil)))
+
+(defun codex-attn--buffer-for-thread-id (thread-id)
+  (let ((buf (and thread-id
+                  (gethash thread-id codex-attn--thread-id->buffer))))
+    (if (buffer-live-p buf)
+        buf
+      (when thread-id
+        (remhash thread-id codex-attn--thread-id->buffer))
+      nil)))
+
+(defun codex-attn--record-thread-binding (buffer thread-id)
+  (when (and (buffer-live-p buffer)
+             (stringp thread-id)
+             (not (string-empty-p thread-id)))
+    (with-current-buffer buffer
+      (when (and codex-attn-thread-id
+                 (eq (gethash codex-attn-thread-id
+                              codex-attn--thread-id->buffer)
+                     buffer))
+        (remhash codex-attn-thread-id codex-attn--thread-id->buffer))
+      (setq-local codex-attn-thread-id thread-id))
+    (puthash thread-id buffer codex-attn--thread-id->buffer)
+    buffer))
+
+;;;###autoload
+(defun codex-attn-bind-buffer-thread (buffer thread-id)
+  "Bind Codex terminal BUFFER to app-server THREAD-ID."
+  (unless (codex-attn--provider-terminal-buffer-p buffer 'codex)
+    (error "Not a live Codex terminal buffer: %s" buffer))
+  (codex-attn--record-thread-binding buffer thread-id)
+  (if (and (boundp 'codex-attn-mode) codex-attn-mode)
+      (codex-attn--schedule-refresh)
+    (run-hooks 'codex-attn-state-change-hook))
+  thread-id)
 
 (defun codex-attn--current-attn-buffer ()
   (let ((buf (window-buffer (selected-window))))
@@ -283,13 +322,27 @@ The returned buffer objects retain their identity when their names change."
        (equal (codex-attn--session-emacs-instance-id session)
               codex-attn--emacs-instance-id)))
 
+(defun codex-attn--session-relevant-p (session)
+  (or (codex-attn--buffer-for-thread-id
+       (codex-attn--session-thread-id session))
+      (codex-attn--session-owned-p session)))
+
 (defun codex-attn--session-key (session)
   (plist-get session :file))
 
 (defun codex-attn--buffer-for-session (session)
-  (and (codex-attn--session-owned-p session)
-       (codex-attn--buffer-for-terminal-id
-        (codex-attn--session-terminal-id session))))
+  (or (codex-attn--buffer-for-thread-id
+       (codex-attn--session-thread-id session))
+      (when (codex-attn--session-owned-p session)
+        (let ((buffer
+               (codex-attn--buffer-for-terminal-id
+                (codex-attn--session-terminal-id session))))
+          ;; Standalone Codex still identifies itself through the terminal
+          ;; environment.  Learn its canonical thread id on the first event.
+          (when (and buffer (codex-attn--session-thread-id session))
+            (codex-attn--record-thread-binding
+             buffer (codex-attn--session-thread-id session)))
+          buffer))))
 
 (defun codex-attn--visible-pending-sessions ()
   codex-attn--actionable-session-list)
@@ -404,13 +457,8 @@ The returned buffer objects retain their identity when their names change."
                    (cached (gethash file codex-attn--state-cache)))
               (unless (equal signature (plist-get cached :signature))
                 (let ((session (codex-attn--read-session-file provider file)))
-                  (if (and session
-                           (not (codex-attn--session-has-identity-p session)))
-                      (progn
-                        (condition-case nil (delete-file file) (file-error nil))
-                        (remhash file codex-attn--state-cache))
-                    (puthash file (list :signature signature :session session)
-                             codex-attn--state-cache)))))))))
+                  (puthash file (list :signature signature :session session)
+                           codex-attn--state-cache))))))))
     (maphash
      (lambda (file _entry)
        (unless (gethash file seen)
@@ -422,7 +470,7 @@ The returned buffer objects retain their identity when their names change."
     (maphash
      (lambda (_file entry)
        (let ((session (plist-get entry :session)))
-         (when (and session (codex-attn--session-owned-p session))
+         (when (and session (codex-attn--session-relevant-p session))
            (push session sessions))))
      codex-attn--state-cache)
     sessions))
@@ -498,6 +546,11 @@ The returned buffer objects retain their identity when their names change."
         (codex-attn--forget-session session t))
       (when terminal-id
         (remhash terminal-id codex-attn--terminal-id->buffer))
+      (when (and codex-attn-thread-id
+                 (eq (gethash codex-attn-thread-id
+                              codex-attn--thread-id->buffer)
+                     (current-buffer)))
+        (remhash codex-attn-thread-id codex-attn--thread-id->buffer))
       (codex-attn--rebuild-actionable-index)
       (codex-attn--update-indicator))))
 

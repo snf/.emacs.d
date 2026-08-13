@@ -59,6 +59,7 @@ the new buffer, using `ghostel-mode' unless MODE is supplied."
           (codex-attn--pending-sessions nil)
           (codex-attn--actionable-session-list nil)
           (codex-attn--terminal-id->buffer (make-hash-table :test 'equal))
+          (codex-attn--thread-id->buffer (make-hash-table :test 'equal))
           (codex-attn--sessions-by-buffer (make-hash-table :test 'eq))
           (codex-attn--state-cache (make-hash-table :test 'equal))
           (codex-attn--snoozed-until (make-hash-table :test 'equal)))
@@ -224,14 +225,43 @@ the new buffer, using `ghostel-mode' unless MODE is supplied."
       (should-not codex-attn--pending-sessions)
       (should (= 1 (hash-table-count codex-attn--state-cache))))))
 
-(ert-deftest codex-attn-state-without-identity-is-removed ()
+(ert-deftest codex-attn-shared-state-waits-for-thread-binding ()
   (codex-attn-test--with-state
     (let ((file (codex-attn-test--write-state
                  codex-attn-state-dir "thread-without-identity" :cwd "/tmp/")))
       (codex-attn--refresh)
-      (should-not (file-exists-p file))
+      (should (file-exists-p file))
       (should-not codex-attn--pending-sessions)
-      (should (= 0 (hash-table-count codex-attn--state-cache))))))
+      (should (= 1 (hash-table-count codex-attn--state-cache))))))
+
+(ert-deftest codex-attn-thread-id-selects-shared-server-buffer ()
+  (codex-attn-test--with-state
+    (codex-attn-test--with-buffers
+        ((buf1 "*codex: one*" "/tmp/")
+         (buf2 "*codex: two*" "/tmp/"))
+      (codex-attn-bind-buffer-thread buf2 "thread-shared")
+      (let ((file (codex-attn-test--write-state
+                   codex-attn-state-dir "thread-shared" :cwd "/tmp/")))
+        (codex-attn--refresh)
+        (should (file-exists-p file))
+        (should (= 1 (length codex-attn--pending-sessions)))
+        (should-not (eq buf1 (codex-attn--buffer-for-session
+                              (car codex-attn--pending-sessions))))
+        (should (eq buf2 (codex-attn--buffer-for-session
+                          (car codex-attn--pending-sessions))))))))
+
+(ert-deftest codex-attn-killing-remote-buffer-preserves-shared-state ()
+  (codex-attn-test--with-state
+    (codex-attn-test--with-buffers
+        ((buf "*codex: remote*" "/tmp/"))
+      (codex-attn-bind-buffer-thread buf "thread-remote")
+      (let ((file (codex-attn-test--write-state
+                   codex-attn-state-dir "thread-remote" :cwd "/tmp/")))
+        (codex-attn--refresh)
+        (kill-buffer buf)
+        (should (file-exists-p file))
+        (should-not (gethash "thread-remote"
+                             codex-attn--thread-id->buffer))))))
 
 (ert-deftest codex-attn-cache-does-not-reparse-unchanged-files ()
   (codex-attn-test--with-state

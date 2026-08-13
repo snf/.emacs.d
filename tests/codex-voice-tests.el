@@ -27,7 +27,8 @@
          (with-current-buffer buffer
            (ghostel-mode)
            (setq-local codex-attn-terminal-id "terminal-voice")
-           (with-temp-file (expand-file-name "terminal-voice.json" root)
+           (setq-local codex-attn-thread-id "thread-voice")
+           (with-temp-file (expand-file-name "thread-voice.json" root)
              (insert
               (json-encode
                '((thread_id . "thread-voice")
@@ -40,7 +41,7 @@
          (kill-buffer buffer))
        (delete-directory root t))))
 
-(ert-deftest codex-voice-reads-exact-terminal-context ()
+(ert-deftest codex-voice-reads-exact-thread-context ()
   (codex-voice-test--with-target
     (let ((context (codex-voice--read-context (current-buffer))))
       (should (equal (plist-get context :thread_id) "thread-voice"))
@@ -209,12 +210,12 @@
       (should (equal pasted "Context-aware follow-up"))
       (should submitted))))
 
-(ert-deftest codex-voice-removes-context-when-terminal-closes ()
+(ert-deftest codex-voice-preserves-context-when-terminal-closes ()
   (codex-voice-test--with-target
     (let ((file (codex-voice--context-file (current-buffer))))
       (should (file-exists-p file))
-      (codex-voice--cleanup-context)
-      (should-not (file-exists-p file)))))
+      (kill-buffer (current-buffer))
+      (should (file-exists-p file)))))
 
 (provide 'codex-voice-tests)
 

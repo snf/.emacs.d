@@ -172,8 +172,6 @@ def _same_completed_turn(old, data):
         and old.get("thread_id") == data.get("thread_id")
         and old.get("provider") == data.get("provider")
         and old.get("turn_id") == turn_id
-        and old.get("emacs_instance_id") == data.get("emacs_instance_id")
-        and old.get("terminal_id") == data.get("terminal_id")
     )
 
 
@@ -248,8 +246,6 @@ def main():
 
     emacs_instance_id = os.environ.get("CODEX_ATTN_EMACS_INSTANCE_ID")
     terminal_id = os.environ.get("CODEX_ATTN_TERMINAL_ID")
-    if not emacs_instance_id or not terminal_id:
-        return 0
 
     state_dir = configured_state_dir
     if not state_dir:
@@ -275,7 +271,7 @@ def main():
         "input-messages",
     )
     data = {
-        "state_version": 2,
+        "state_version": 3,
         "thread_id": thread_id,
         "provider": provider,
         "turn_id": turn_id,
@@ -306,9 +302,8 @@ def main():
     }
 
     # Attention files are deliberately deleted once Emacs displays their
-    # terminal.  Keep a separate per-terminal record so integrations such as
-    # voice follow-ups can still ground the next message in the last completed
-    # Codex turn.
+    # thread.  Keep a separate per-thread record so integrations such as voice
+    # follow-ups also include turns completed by mobile clients.
     if provider == "codex":
         context_dir = os.environ.get("CODEX_CONTEXT_STATE_DIR")
         if not context_dir:
@@ -316,16 +311,16 @@ def main():
                 "XDG_CACHE_HOME", os.path.expanduser("~/.cache")
             )
             context_dir = os.path.join(cache_home, "codex", "contexts")
-        context_path = os.path.join(context_dir, f"{terminal_id}.json")
+        context_path = os.path.join(context_dir, f"{thread_id}.json")
         context_old = _read_json_file(context_path)
         context_data = {
             **data,
-            "context_version": 2,
+            "context_version": 3,
             "last_user_message": _last_user_message(input_messages),
         }
         if (
             not isinstance(context_old, dict)
-            or context_old.get("context_version") != 2
+            or context_old.get("context_version") != 3
             or not _same_completed_turn(context_old, context_data)
         ):
             _atomic_write_json(context_path, context_data)
@@ -335,7 +330,7 @@ def main():
     # wakes Emacs' file watcher.  A missing turn id is not safe to deduplicate.
     if (
         isinstance(old, dict)
-        and old.get("state_version") == 2
+        and old.get("state_version") == 3
         and _same_completed_turn(old, data)
     ):
         return 0

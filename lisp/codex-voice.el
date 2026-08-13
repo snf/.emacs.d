@@ -64,7 +64,7 @@ dictation, leaving the polished text in the Codex composer for review."
 (defcustom codex-voice-context-dir
   (expand-file-name "codex/contexts"
                     (or (getenv "XDG_CACHE_HOME") "~/.cache/"))
-  "Directory containing per-terminal context from `codex-notify.py'."
+  "Directory containing per-thread context from `codex-notify.py'."
   :type 'directory)
 
 (defvar codex-voice--capture nil)
@@ -76,10 +76,31 @@ dictation, leaving the polished text in the Codex composer for review."
     (when (buffer-live-p buffer)
       (buffer-local-value 'codex-attn-terminal-id buffer))))
 
+(defun codex-voice--thread-id (&optional buffer)
+  "Return the app-server thread id attached to BUFFER."
+  (let ((buffer (or buffer (current-buffer))))
+    (when (buffer-live-p buffer)
+      (buffer-local-value 'codex-attn-thread-id buffer))))
+
 (defun codex-voice--context-file (&optional buffer)
-  "Return the context filename associated with BUFFER."
-  (when-let ((terminal-id (codex-voice--terminal-id buffer)))
-    (expand-file-name (concat terminal-id ".json") codex-voice-context-dir)))
+  "Return the context filename associated with BUFFER.
+
+Prefer canonical per-thread context, with a per-terminal fallback for files
+written by older notifier versions."
+  (let* ((thread-id (codex-voice--thread-id buffer))
+         (thread-file
+          (and thread-id
+               (expand-file-name (concat thread-id ".json")
+                                 codex-voice-context-dir)))
+         (terminal-id (codex-voice--terminal-id buffer))
+         (terminal-file
+          (and terminal-id
+               (expand-file-name (concat terminal-id ".json")
+                                 codex-voice-context-dir))))
+    (cond
+     ((and thread-file (file-exists-p thread-file)) thread-file)
+     ((and terminal-file (file-exists-p terminal-file)) terminal-file)
+     (thread-file))))
 
 (defun codex-voice--read-context (buffer)
   "Read and validate the last completed Codex turn for BUFFER."
@@ -92,9 +113,12 @@ dictation, leaving the polished text in the Codex composer for review."
            (json-array-type 'list)
            (json-false nil)
            (context (json-read-file file))
+           (thread-id (codex-voice--thread-id buffer))
            (terminal-id (codex-voice--terminal-id buffer)))
       (unless (and (equal (plist-get context :provider) "codex")
-                   (equal (plist-get context :terminal_id) terminal-id)
+                   (if thread-id
+                       (equal (plist-get context :thread_id) thread-id)
+                     (equal (plist-get context :terminal_id) terminal-id))
                    (stringp (plist-get context :last_assistant_message))
                    (not (string-blank-p
                          (plist-get context :last_assistant_message))))
@@ -282,28 +306,21 @@ dictation, leaving the polished text in the Codex composer for review."
     (add-hook 'whisper-after-transcription-hook hook)
     hook))
 
-(defun codex-voice--cleanup-context ()
-  "Remove the persistent context belonging to the current terminal."
-  (when-let ((file (codex-voice--context-file (current-buffer))))
-    (when (file-exists-p file)
-      (condition-case nil
-          (delete-file file)
-        (file-error nil)))))
-
 (defun codex-voice--ghostel-setup ()
-  "Arrange to discard the current Ghostel terminal's saved context on close."
-  (add-hook 'kill-buffer-hook #'codex-voice--cleanup-context nil t))
+  "Compatibility setup hook for Codex Ghostel buffers."
+  nil)
 
 (add-hook 'ghostel-mode-hook #'codex-voice--ghostel-setup)
 
 (defun codex-voice--prepare-target (buffer)
-  "Validate BUFFER and install its context cleanup hook."
+  "Validate BUFFER and its conversation identity."
   (with-current-buffer buffer
     (unless (and (derived-mode-p 'ghostel-mode)
                  (eq (codex-attn-buffer-provider buffer) 'codex))
       (user-error "Run this command from a Codex Ghostel buffer"))
-    (unless (codex-voice--terminal-id buffer)
-      (user-error "This Codex terminal has no notifier identity"))
+    (unless (or (codex-voice--thread-id buffer)
+                (codex-voice--terminal-id buffer))
+      (user-error "This Codex terminal has no conversation identity"))
     (codex-voice--ghostel-setup)))
 
 ;;;###autoload

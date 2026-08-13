@@ -45,6 +45,7 @@ Each item in SPECS is (SYMBOL NAME)."
   "Run BODY with isolated notifier indexes."
   (declare (indent 0) (debug t))
   `(let ((codex-attn--terminal-id->buffer (make-hash-table :test 'equal))
+         (codex-attn--thread-id->buffer (make-hash-table :test 'equal))
          (codex-attn--sessions-by-buffer (make-hash-table :test 'eq))
          (codex-attn--pending-sessions nil)
          (codex-attn--actionable-session-list nil)

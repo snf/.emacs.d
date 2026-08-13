@@ -40,8 +40,8 @@ class CodexNotifyTests(unittest.TestCase):
     def read(self, thread="thread-1"):
         return json.loads((self.state_dir / f"{thread}.json").read_text())
 
-    def read_context(self, terminal="terminal-1"):
-        return json.loads((self.context_dir / f"{terminal}.json").read_text())
+    def read_context(self, thread="thread-1"):
+        return json.loads((self.context_dir / f"{thread}.json").read_text())
 
     def test_copies_required_process_identity(self):
         self.notify(
@@ -56,7 +56,7 @@ class CodexNotifyTests(unittest.TestCase):
         self.assertEqual(data["emacs_instance_id"], "emacs-1")
         self.assertEqual(data["terminal_id"], "terminal-1")
 
-    def test_ignores_notifications_without_process_identity(self):
+    def test_persists_shared_server_notifications_without_process_identity(self):
         env = self.env.copy()
         env.pop("CODEX_ATTN_EMACS_INSTANCE_ID")
         env.pop("CODEX_ATTN_TERMINAL_ID")
@@ -68,10 +68,12 @@ class CodexNotifyTests(unittest.TestCase):
             },
             env=env,
         )
-        self.assertFalse(self.state_dir.exists())
-        self.assertFalse(self.context_dir.exists())
+        self.assertEqual(self.read()["thread_id"], "thread-1")
+        self.assertIsNone(self.read()["emacs_instance_id"])
+        self.assertIsNone(self.read()["terminal_id"])
+        self.assertEqual(self.read_context()["thread_id"], "thread-1")
 
-    def test_persists_last_turn_context_by_terminal(self):
+    def test_persists_last_turn_context_by_thread(self):
         self.notify(
             {
                 "type": "agent-turn-complete",
@@ -83,8 +85,8 @@ class CodexNotifyTests(unittest.TestCase):
             }
         )
         data = self.read_context()
-        self.assertEqual(data["state_version"], 2)
-        self.assertEqual(data["context_version"], 2)
+        self.assertEqual(data["state_version"], 3)
+        self.assertEqual(data["context_version"], 3)
         self.assertEqual(data["thread_id"], "thread-1")
         self.assertEqual(data["last_user_message"], "Please compare both approaches")
         self.assertNotIn("input_messages", data)
@@ -125,7 +127,7 @@ class CodexNotifyTests(unittest.TestCase):
         self.notify(event)
         path = self.state_dir / "thread-1.json"
         before = path.stat().st_mtime_ns
-        context_path = self.context_dir / "terminal-1.json"
+        context_path = self.context_dir / "thread-1.json"
         context_before = context_path.stat().st_mtime_ns
         time.sleep(0.02)
         self.notify(event)
@@ -157,8 +159,8 @@ class CodexNotifyTests(unittest.TestCase):
 
         attention = self.read()
         context = self.read_context()
-        self.assertEqual(attention["state_version"], 2)
-        self.assertEqual(context["context_version"], 2)
+        self.assertEqual(attention["state_version"], 3)
+        self.assertEqual(context["context_version"], 3)
         self.assertEqual(context["last_user_message"], "latest")
         self.assertNotIn("input_messages", attention)
         self.assertNotIn("input_messages", context)
