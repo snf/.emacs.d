@@ -42,8 +42,12 @@ The app-server endpoint is appended as `--endpoint ENDPOINT'."
   "Program used for non-blocking readiness probes."
   :type 'string)
 
-(defcustom codex-app-server-codex-program "codex"
-  "Codex CLI program used by remote Ghostel sessions."
+(defcustom codex-app-server-codex-program
+  "/home/core/.local/bin/codex-0.147.0-resume-cwd"
+  "Codex CLI program used by remote Ghostel sessions.
+
+This build backports preservation of the remote cwd override when an active
+TUI opens its resume picker."
   :type 'string)
 
 (defcustom codex-app-server-python-command
