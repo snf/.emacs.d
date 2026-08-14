@@ -36,19 +36,6 @@ def _thread_id_from_result(message: dict[str, Any]) -> str | None:
     return thread_id if isinstance(thread_id, str) else None
 
 
-def _thread_id_from_notification(message: dict[str, Any]) -> str | None:
-    if message.get("method") != "thread/started":
-        return None
-    params = message.get("params")
-    if not isinstance(params, dict):
-        return None
-    thread = params.get("thread")
-    if not isinstance(thread, dict):
-        return None
-    thread_id = thread.get("id")
-    return thread_id if isinstance(thread_id, str) else None
-
-
 async def _run_proxy(endpoint: str, host: str) -> None:
     reported_thread: str | None = None
 
@@ -86,8 +73,11 @@ async def _run_proxy(endpoint: str, host: str) -> None:
                             if isinstance(
                                 response_id, (str, int)
                             ) and request_methods.pop(str(response_id), None):
+                                # A shared app-server can deliver lifecycle
+                                # notifications for other threads.  Only a
+                                # response to this TUI's own selection request
+                                # identifies the buffer's thread.
                                 report(_thread_id_from_result(message))
-                            report(_thread_id_from_notification(message))
                         await client.send(raw)
 
                 tasks = {

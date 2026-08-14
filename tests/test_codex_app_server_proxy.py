@@ -20,6 +20,14 @@ class CodexAppServerProxyTests(unittest.IsolatedAsyncioTestCase):
                 await websocket.send(
                     json.dumps(
                         {
+                            "method": "thread/started",
+                            "params": {"thread": {"id": "unrelated-thread"}},
+                        }
+                    )
+                )
+                await websocket.send(
+                    json.dumps(
+                        {
                             "id": message["id"],
                             "result": {"thread": {"id": thread_id}},
                         }
@@ -49,6 +57,8 @@ class CodexAppServerProxyTests(unittest.IsolatedAsyncioTestCase):
                         "params": {"threadId": thread_id},
                     }
                     await client.send(json.dumps(request))
+                    notification = json.loads(await client.recv())
+                    self.assertEqual(notification["method"], "thread/started")
                     response = json.loads(await client.recv())
                     self.assertEqual(response["result"]["thread"]["id"], thread_id)
                     event = json.loads(await process.stdout.readline())
