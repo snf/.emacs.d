@@ -22,7 +22,7 @@
   :type 'string)
 
 (defcustom codex-app-server-start-command
-  '("/projects/takopi/.venv/bin/python"
+  '("python3"
     "/projects/takopi/scripts/mobile_stack.py"
     "start")
   "Command that starts the persistent Codex and Takopi mobile stack.
@@ -46,10 +46,10 @@ The app-server endpoint is appended as `--endpoint ENDPOINT'."
   "Codex CLI program used by remote Ghostel sessions."
   :type 'string)
 
-(defcustom codex-app-server-python-program
-  "/projects/takopi/.venv/bin/python"
-  "Python interpreter containing the `websockets' package."
-  :type 'file)
+(defcustom codex-app-server-python-command
+  '("uv" "run" "--project" "/projects/takopi" "python")
+  "Command prefix for Python programs that need Takopi's dependencies."
+  :type '(repeat string))
 
 (defconst codex-app-server--module-directory
   (file-name-directory (or load-file-name buffer-file-name)))
@@ -258,9 +258,9 @@ ERROR-CALLBACK if the proxy exits before or during use."
   (let ((process
          (make-process
           :name (generate-new-buffer-name "codex-tui-proxy")
-          :command (list codex-app-server-python-program
-                         codex-app-server-proxy-script
-                         "--endpoint" codex-app-server-endpoint)
+          :command (append codex-app-server-python-command
+                           (list codex-app-server-proxy-script
+                                 "--endpoint" codex-app-server-endpoint))
           :connection-type 'pipe
           :noquery t
           :filter #'codex-app-server--proxy-filter

@@ -61,6 +61,17 @@
                        '("stack" "start" "--endpoint"
                          "ws://127.0.0.1:9876")))))))
 
+(ert-deftest codex-app-server-default-commands-do-not-require-a-venv ()
+  (should (equal codex-app-server-start-command
+                 '("python3" "/projects/takopi/scripts/mobile_stack.py"
+                   "start")))
+  (should (equal codex-app-server-python-command
+                 '("uv" "run" "--project" "/projects/takopi" "python")))
+  (should-not
+   (seq-some (lambda (argument) (string-match-p "/\\.venv/" argument))
+             (append codex-app-server-start-command
+                     codex-app-server-python-command))))
+
 (ert-deftest codex-app-server-proxy-parses-ready-and-thread-events ()
   (let ((process (start-process "codex-proxy-parser-test" nil "true"))
         ready thread)
