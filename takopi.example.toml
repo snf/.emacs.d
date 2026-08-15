@@ -1,0 +1,37 @@
+# Copy this file to ~/.takopi/takopi.toml and replace the Telegram values.
+
+default_engine = "codex"
+transport = "telegram"
+
+[codex]
+mode = "app_server"
+app_server_url = "ws://127.0.0.1:4500"
+app_server_approval_policy = "prompt"
+
+[transports.telegram]
+bot_token = "<redacted>"
+chat_id = 123456789
+allowed_user_ids = [123456789]
+message_overflow = "split"
+approval_timeout_seconds = 300
+project_picker_root = "/projects"
+session_mode = "chat"
+show_resume_line = false
+voice_transcription = true
+voice_transcription_backend = "whisper_cpp"
+voice_whisper_cpp_program = "/home/core/.emacs.d/.cache/whisper.cpp/build/bin/whisper-cli"
+voice_whisper_cpp_model_path = "/home/core/.emacs.d/.cache/whisper.cpp/models/ggml-small.bin"
+voice_whisper_cpp_language = "es"
+voice_whisper_cpp_threads = 4
+voice_context_formatting = true
+voice_submit_mode = "review"
+voice_formatter_model = "gpt-5.6-luna"
+voice_formatter_reasoning = "max"
+
+[transports.telegram.topics]
+enabled = true
+scope = "main"
+
+[transports.telegram.files]
+enabled = true
+allowed_user_ids = [123456789]
