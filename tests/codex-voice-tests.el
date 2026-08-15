@@ -97,97 +97,78 @@
       (should (equal pasted "Review me"))
       (should-not submitted))))
 
-(ert-deftest codex-voice-clear-capture-releases-hook-timer-and-target-hook ()
+(ert-deftest codex-voice-clear-capture-releases-timer-and-target-hook ()
   (codex-voice-test--with-target
     (let ((codex-voice--capture nil)
-          (codex-voice-capture-timeout 3600)
-          (old-whisper-hook (default-value 'whisper-after-transcription-hook)))
+          (codex-voice-capture-timeout 3600))
       (unwind-protect
-          (progn
-            (setq-default whisper-after-transcription-hook nil)
-            (let ((hook
-                   (codex-voice--install-capture
-                    (current-buffer)
-                    (codex-voice--read-context (current-buffer))
-                    t)))
-              (should
-               (memq hook (default-value 'whisper-after-transcription-hook)))
-              (should
-               (memq #'codex-voice--capture-target-killed kill-buffer-hook))
-              (codex-voice--clear-capture)
-              (should-not codex-voice--capture)
-              (should-not
-               (memq hook
-                     (default-value 'whisper-after-transcription-hook)))
-              (should-not
-               (memq #'codex-voice--capture-target-killed kill-buffer-hook))))
-        (codex-voice--clear-capture)
-        (setq-default whisper-after-transcription-hook old-whisper-hook)))))
+          (let* ((capture
+                  (codex-voice--install-capture
+                   (current-buffer)
+                   (codex-voice--read-context (current-buffer))
+                   t))
+                 (timer (plist-get capture :timer)))
+            (should (timerp timer))
+            (should
+             (memq #'codex-voice--capture-target-killed kill-buffer-hook))
+            (codex-voice--clear-capture)
+            (should-not codex-voice--capture)
+            (should-not (memq timer timer-list))
+            (should-not
+             (memq #'codex-voice--capture-target-killed kill-buffer-hook)))
+        (codex-voice--clear-capture)))))
 
 (ert-deftest codex-voice-capture-timeout-releases-stale-context ()
   (codex-voice-test--with-target
     (let ((codex-voice--capture nil)
-          (codex-voice-capture-timeout 3600)
-          (old-whisper-hook (default-value 'whisper-after-transcription-hook)))
+          (codex-voice-capture-timeout 3600))
       (unwind-protect
-          (progn
-            (setq-default whisper-after-transcription-hook nil)
-            (let ((hook
-                   (codex-voice--install-capture
-                    (current-buffer)
-                    (codex-voice--read-context (current-buffer))
-                    t)))
-              (codex-voice--capture-expired hook)
-              (should-not codex-voice--capture)
-              (should-not
-               (memq hook
-                     (default-value 'whisper-after-transcription-hook)))))
-        (codex-voice--clear-capture)
-        (setq-default whisper-after-transcription-hook old-whisper-hook)))))
+          (let ((capture
+                 (codex-voice--install-capture
+                  (current-buffer)
+                  (codex-voice--read-context (current-buffer))
+                  t)))
+            (codex-voice--capture-expired capture)
+            (should-not codex-voice--capture))
+        (codex-voice--clear-capture)))))
 
 (ert-deftest codex-voice-target-kill-releases-capture ()
   (codex-voice-test--with-target
     (let ((codex-voice--capture nil)
-          (codex-voice-capture-timeout 3600)
-          (old-whisper-hook (default-value 'whisper-after-transcription-hook)))
+          (codex-voice-capture-timeout 3600))
       (unwind-protect
           (progn
-            (setq-default whisper-after-transcription-hook nil)
             (codex-voice--install-capture
              (current-buffer)
              (codex-voice--read-context (current-buffer))
              t)
             (codex-voice--capture-target-killed)
             (should-not codex-voice--capture)
-            (should-not (default-value 'whisper-after-transcription-hook)))
-        (codex-voice--clear-capture)
-        (setq-default whisper-after-transcription-hook old-whisper-hook)))))
+            (should-not
+             (memq #'codex-voice--capture-target-killed kill-buffer-hook)))
+        (codex-voice--clear-capture)))))
 
 (ert-deftest codex-voice-whisper-error-releases-capture ()
   (codex-voice-test--with-target
     (let ((codex-voice--capture nil)
-          (codex-voice-capture-timeout 3600)
-          (old-whisper-hook (default-value 'whisper-after-transcription-hook)))
+          (codex-voice-capture-timeout 3600))
       (unwind-protect
-          (progn
-            (setq-default whisper-after-transcription-hook nil)
-            (codex-voice--install-capture
-             (current-buffer)
-             (codex-voice--read-context (current-buffer))
-             t)
+          (let ((capture
+                 (codex-voice--install-capture
+                  (current-buffer)
+                  (codex-voice--read-context (current-buffer))
+                  t)))
             (cl-letf (((symbol-function 'whisper-run)
                        (lambda (&rest _) (error "simulated Whisper failure"))))
-              (should-error (codex-voice--run-whisper-for-capture)
+              (should-error (codex-voice--run-whisper-for-capture capture)
                             :type 'error))
-            (should-not codex-voice--capture)
-            (should-not (default-value 'whisper-after-transcription-hook)))
-        (codex-voice--clear-capture)
-        (setq-default whisper-after-transcription-hook old-whisper-hook)))))
+            (should-not codex-voice--capture))
+        (codex-voice--clear-capture)))))
 
 (ert-deftest codex-voice-formatter-process-delivers-successful-output ()
   (codex-voice-test--with-target
     (let ((fake-codex (expand-file-name "fake-codex" root))
-          (codex-voice--formatter-process nil)
+          (codex-voice--formatter-processes nil)
           pasted
           submitted)
       (with-temp-file fake-codex
@@ -209,6 +190,66 @@
             (accept-process-output nil 0.05))))
       (should (equal pasted "Context-aware follow-up"))
       (should submitted))))
+
+(ert-deftest codex-voice-allows-concurrent-formatters ()
+  (codex-voice-test--with-target
+    (let ((fake-codex (expand-file-name "slow-fake-codex" root))
+          (codex-voice--formatter-processes nil))
+      (with-temp-file fake-codex
+        (insert "#!/bin/sh\ncat >/dev/null\nsleep 0.2\nprintf 'done'\n"))
+      (set-file-modes fake-codex #o700)
+      (let ((codex-voice-codex-program fake-codex))
+        (let ((first
+               (codex-voice--start-formatter
+                (current-buffer) (codex-voice--read-context (current-buffer))
+                "first" nil))
+              (second
+               (codex-voice--start-formatter
+                (current-buffer) (codex-voice--read-context (current-buffer))
+                "second" nil)))
+          (should (process-live-p first))
+          (should (process-live-p second))
+          (should (= (length codex-voice--formatter-processes) 2))
+          (while (or (process-live-p first) (process-live-p second))
+            (accept-process-output nil 0.1)))))))
+
+(ert-deftest codex-voice-releases-microphone-before-transcription ()
+  (codex-voice-test--with-target
+    (let* ((fake-whisper (expand-file-name "fake-whisper" root))
+           (whisper--temp-file (expand-file-name "recording.wav" root))
+           (whisper--transcribing-process nil)
+           (codex-voice--capture nil)
+           (codex-voice--transcription-processes nil)
+           dictation)
+      (with-temp-file fake-whisper
+        (insert "#!/bin/sh\nsleep 0.2\nprintf 'texto transcrito'\n"))
+      (set-file-modes fake-whisper #o700)
+      (with-temp-file whisper--temp-file
+        (insert "fake audio"))
+      (let* ((capture
+              (codex-voice--install-capture
+               (current-buffer) (codex-voice--read-context (current-buffer)) t))
+             (recording
+              (make-process :name "fake-recording" :command '("sh" "-c" "true")
+                            :noquery t)))
+        (setf (plist-get capture :process) recording)
+        (process-put recording 'codex-voice-capture capture)
+        (while (process-live-p recording)
+          (accept-process-output recording 0.05))
+        (cl-letf (((symbol-function 'whisper-command)
+                   (lambda (_audio-file) (list fake-whisper)))
+                  ((symbol-function 'codex-voice--start-formatter)
+                   (lambda (_target _context text _submit)
+                     (setq dictation text))))
+          (codex-voice--recording-finished recording "finished\n")
+          (should-not codex-voice--capture)
+          (should-not whisper--transcribing-process)
+          (let ((transcription (car codex-voice--transcription-processes)))
+            (should (process-live-p transcription))
+            (while (process-live-p transcription)
+              (accept-process-output transcription 0.1))
+            (accept-process-output nil 0.05)))
+        (should (equal dictation "texto transcrito"))))))
 
 (ert-deftest codex-voice-preserves-context-when-terminal-closes ()
   (codex-voice-test--with-target

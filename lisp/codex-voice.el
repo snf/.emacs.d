@@ -17,10 +17,14 @@
 (declare-function whisper-recording-p "whisper" ())
 (declare-function whisper-transcribing-p "whisper" ())
 (declare-function whisper-run "whisper" (&optional arg))
+(declare-function whisper-command "whisper" (input-file))
+(declare-function whisper--setup-mode-line "whisper" (command phase))
 
 (defvar whisper-after-transcription-hook nil)
 (defvar whisper-insert-text-at-point nil)
 (defvar whisper-translate nil)
+(defvar whisper--recording-process nil)
+(defvar whisper--temp-file nil)
 
 (defgroup codex-voice nil
   "Context-aware dictated follow-ups for Codex in Ghostel."
@@ -68,7 +72,8 @@ dictation, leaving the polished text in the Codex composer for review."
   :type 'directory)
 
 (defvar codex-voice--capture nil)
-(defvar codex-voice--formatter-process nil)
+(defvar codex-voice--transcription-processes nil)
+(defvar codex-voice--formatter-processes nil)
 
 (defun codex-voice--terminal-id (&optional buffer)
   "Return the notifier terminal id for BUFFER or the current buffer."
@@ -180,8 +185,8 @@ written by older notifier versions."
 (defun codex-voice--formatter-finished (process _event)
   "Handle completion of formatter PROCESS."
   (when (memq (process-status process) '(exit signal))
-    (when (eq process codex-voice--formatter-process)
-      (setq codex-voice--formatter-process nil))
+    (setq codex-voice--formatter-processes
+          (delq process codex-voice--formatter-processes))
     (let* ((output-buffer (process-buffer process))
            (error-buffer (process-get process 'codex-voice-error-buffer))
            (target (process-get process 'codex-voice-target))
@@ -215,10 +220,8 @@ written by older notifier versions."
 
 (defun codex-voice--start-formatter (target context dictation submit)
   "Format DICTATION for TARGET using CONTEXT, then optionally SUBMIT it."
-  (when (process-live-p codex-voice--formatter-process)
-    (user-error "A Codex voice follow-up is already being formatted"))
   (let* ((output-buffer (generate-new-buffer " *codex-voice-output*"))
-         (error-buffer (get-buffer-create "*Codex Voice Error*"))
+         (error-buffer (generate-new-buffer "*Codex Voice Error*"))
          (process
           (make-process
            :name "codex-voice-formatter"
@@ -231,7 +234,7 @@ written by older notifier versions."
            :sentinel #'codex-voice--formatter-finished)))
     (with-current-buffer error-buffer
       (erase-buffer))
-    (setq codex-voice--formatter-process process)
+    (push process codex-voice--formatter-processes)
     (process-put process 'codex-voice-error-buffer error-buffer)
     (process-put process 'codex-voice-target target)
     (process-put process 'codex-voice-submit submit)
@@ -242,14 +245,17 @@ written by older notifier versions."
              codex-voice-model)
     process))
 
-(defun codex-voice--clear-capture ()
-  "Remove any installed one-shot Whisper capture hook."
+(defun codex-voice--clear-capture (&optional expected)
+  "Release the active microphone capture.
+
+When EXPECTED is non-nil, only release it if it is still the active capture."
   (let ((capture codex-voice--capture))
+    (when (and expected (not (eq expected capture)))
+      (setq capture nil))
     ;; Clear the global first so cleanup triggered from a timer or kill hook is
     ;; idempotent and cannot observe half-released state.
-    (setq codex-voice--capture nil)
-    (when-let ((hook (plist-get capture :hook)))
-      (remove-hook 'whisper-after-transcription-hook hook))
+    (when capture
+      (setq codex-voice--capture nil))
     (when-let ((timer (plist-get capture :timer)))
       (when (timerp timer)
         (cancel-timer timer)))
@@ -259,52 +265,155 @@ written by older notifier versions."
           (remove-hook 'kill-buffer-hook
                        #'codex-voice--capture-target-killed t))))))
 
-(defun codex-voice--capture-expired (hook)
-  "Release the capture identified by HOOK after its timeout."
-  (when (eq hook (plist-get codex-voice--capture :hook))
-    (codex-voice--clear-capture)
+(defun codex-voice--cancel-capture (&optional expected)
+  "Cancel and release the active microphone capture EXPECTED."
+  (let ((capture codex-voice--capture))
+    (when (and capture (or (null expected) (eq expected capture)))
+      (codex-voice--clear-capture capture)
+      (when-let ((process (plist-get capture :process)))
+        (when (process-live-p process)
+          (delete-process process)))
+      (when (fboundp 'whisper--setup-mode-line)
+        (whisper--setup-mode-line :hide 'recording)))))
+
+(defun codex-voice--capture-expired (capture)
+  "Release unfinished CAPTURE after its timeout."
+  (when (eq capture codex-voice--capture)
+    (codex-voice--cancel-capture capture)
     (message "Codex voice capture expired and released its context")))
 
 (defun codex-voice--capture-target-killed ()
   "Release a capture whose originating terminal is being killed."
   (when (eq (current-buffer) (plist-get codex-voice--capture :target))
-    (codex-voice--clear-capture)))
+    (codex-voice--cancel-capture codex-voice--capture)))
 
-(defun codex-voice--run-whisper-for-capture ()
-  "Run Whisper and release capture state if startup or stopping fails."
+(defun codex-voice--adopt-recording (capture)
+  "Attach CAPTURE to the recording process just started by Whisper."
+  (let ((process whisper--recording-process))
+    (unless (process-live-p process)
+      (error "Whisper did not start an audio recording process"))
+    (setf (plist-get capture :process) process)
+    (process-put process 'codex-voice-capture capture)
+    (set-process-sentinel process #'codex-voice--recording-finished)
+    process))
+
+(defun codex-voice--run-whisper-for-capture (capture)
+  "Start Whisper recording for CAPTURE and release state on failure."
   (condition-case err
-      (whisper-run)
+      (progn
+        (whisper-run)
+        (codex-voice--adopt-recording capture))
     (error
-     (codex-voice--clear-capture)
+     (codex-voice--cancel-capture capture)
      (signal (car err) (cdr err)))))
 
 (defun codex-voice--install-capture (target context submit)
-  "Capture one Whisper transcription for TARGET with CONTEXT and SUBMIT mode."
-  (letrec
-      ((hook
-        (lambda ()
-          (let ((dictation (string-trim (buffer-string))))
-            ;; Prevent whisper.el from inserting the raw Spanish transcription
-            ;; into the terminal after this hook returns.
-            (erase-buffer)
-            (codex-voice--clear-capture)
-            (if (string-empty-p dictation)
-                (message "Whisper produced an empty Codex follow-up")
-              (condition-case err
-                  (codex-voice--start-formatter
-                   target context dictation submit)
-                (error
-                 (message "Could not start Codex voice formatter: %s"
-                          (error-message-string err))))))))
-       (timer
-        (run-at-time (max 1 codex-voice-capture-timeout) nil
-                     #'codex-voice--capture-expired hook)))
-    (setq codex-voice--capture
-          (list :hook hook :target target :timer timer))
+  "Install an exclusive microphone capture for TARGET."
+  (let ((capture (list :target target :context context :submit submit
+                       :timer nil :process nil)))
+    (setf (plist-get capture :timer)
+          (run-at-time (max 1 codex-voice-capture-timeout) nil
+                       #'codex-voice--capture-expired capture))
+    (setq codex-voice--capture capture)
     (with-current-buffer target
       (add-hook 'kill-buffer-hook #'codex-voice--capture-target-killed nil t))
-    (add-hook 'whisper-after-transcription-hook hook)
-    hook))
+    capture))
+
+(defun codex-voice--recording-complete-p (process)
+  "Return non-nil when PROCESS produced audio worth transcribing."
+  (or (eq (process-status process) 'signal)
+      (and (eq (process-status process) 'exit)
+           (memq (process-exit-status process) '(0 255)))))
+
+(defun codex-voice--recording-finished (process _event)
+  "Detach completed recording PROCESS and start its transcription job."
+  (when (memq (process-status process) '(exit signal))
+    (when (eq process whisper--recording-process)
+      (setq whisper--recording-process nil))
+    (when (fboundp 'whisper--setup-mode-line)
+      (whisper--setup-mode-line :hide 'recording))
+    (let ((capture (process-get process 'codex-voice-capture)))
+      (when (eq capture codex-voice--capture)
+        (codex-voice--clear-capture capture)
+        (if (and (codex-voice--recording-complete-p process)
+                 whisper--temp-file
+                 (file-exists-p whisper--temp-file))
+            (let ((audio-file (make-temp-file "codex-voice-" nil ".wav")))
+              (condition-case err
+                  (progn
+                    (rename-file whisper--temp-file audio-file t)
+                    (codex-voice--start-transcription capture audio-file))
+                (error
+                 (when (file-exists-p audio-file)
+                   (delete-file audio-file))
+                 (message "Could not start Codex voice transcription: %s"
+                          (error-message-string err)))))
+          (message "Whisper failed to record the Codex follow-up"))))))
+
+(defun codex-voice--transcription-finished (process _event)
+  "Handle completion of independent transcription PROCESS."
+  (when (memq (process-status process) '(exit signal))
+    (setq codex-voice--transcription-processes
+          (delq process codex-voice--transcription-processes))
+    (let* ((output-buffer (process-buffer process))
+           (error-buffer (process-get process 'codex-voice-error-buffer))
+           (audio-file (process-get process 'codex-voice-audio-file))
+           (capture (process-get process 'codex-voice-capture))
+           (dictation (when (buffer-live-p output-buffer)
+                        (with-current-buffer output-buffer
+                          (string-trim (buffer-string)))))
+           (success (and (eq (process-status process) 'exit)
+                         (= (process-exit-status process) 0)
+                         (not (string-empty-p (or dictation ""))))))
+      (unwind-protect
+          (if success
+              (condition-case err
+                  (codex-voice--start-formatter
+                   (plist-get capture :target)
+                   (plist-get capture :context)
+                   dictation
+                   (plist-get capture :submit))
+                (error
+                 (kill-new dictation)
+                 (message "Could not start Codex voice formatter; copied transcript: %s"
+                          (error-message-string err))))
+            (when (buffer-live-p error-buffer)
+              (display-buffer error-buffer))
+            (message "Codex voice transcription failed%s"
+                     (if dictation (format ": %s" dictation) "")))
+        (when (buffer-live-p output-buffer)
+          (kill-buffer output-buffer))
+        (when (and success (buffer-live-p error-buffer))
+          (kill-buffer error-buffer))
+        (when (and audio-file (file-exists-p audio-file))
+          (delete-file audio-file))))))
+
+(defun codex-voice--start-transcription (capture audio-file)
+  "Transcribe AUDIO-FILE independently for CAPTURE."
+  (let* ((target (plist-get capture :target))
+         (command
+          (with-current-buffer target
+            (let ((whisper-translate nil))
+              (whisper-command audio-file))))
+         (output-buffer (generate-new-buffer " *codex-voice-transcription*"))
+         (error-buffer
+          (generate-new-buffer "*Codex Voice Transcription Error*"))
+         (process
+          (make-process
+           :name "codex-voice-transcription"
+           :command command
+           :buffer output-buffer
+           :stderr error-buffer
+           :coding 'utf-8-unix
+           :connection-type 'pipe
+           :noquery t
+           :sentinel #'codex-voice--transcription-finished)))
+    (push process codex-voice--transcription-processes)
+    (process-put process 'codex-voice-error-buffer error-buffer)
+    (process-put process 'codex-voice-audio-file audio-file)
+    (process-put process 'codex-voice-capture capture)
+    (message "Transcribing dictated Codex follow-up...")
+    process))
 
 (defun codex-voice--ghostel-setup ()
   "Compatibility setup hook for Codex Ghostel buffers."
@@ -336,13 +445,9 @@ the originating Ghostel buffer.  With prefix argument REVIEW, reverse
   (require 'whisper)
   (cond
    ((and codex-voice--capture (whisper-recording-p))
-    (codex-voice--run-whisper-for-capture))
-   ((and codex-voice--capture (whisper-transcribing-p))
-    (user-error "Whisper is already transcribing this Codex follow-up"))
+    (interrupt-process (plist-get codex-voice--capture :process)))
    ((or (whisper-recording-p) (whisper-transcribing-p))
     (user-error "Whisper is busy with another transcription"))
-   ((process-live-p codex-voice--formatter-process)
-    (user-error "A Codex voice follow-up is already being formatted"))
    (t
     (codex-voice--clear-capture)
     (let* ((target (current-buffer))
@@ -353,18 +458,24 @@ the originating Ghostel buffer.  With prefix argument REVIEW, reverse
                      codex-voice-submit-by-default))
            (had-local-insert
             (local-variable-p 'whisper-insert-text-at-point target))
-           (old-insert whisper-insert-text-at-point))
-      (codex-voice--install-capture target context submit)
+           (old-insert whisper-insert-text-at-point)
+           (had-local-translate
+            (local-variable-p 'whisper-translate target))
+           (old-translate whisper-translate)
+           (capture (codex-voice--install-capture target context submit)))
       (unwind-protect
           (progn
-            ;; Satisfy whisper.el's read-only-buffer check for terminals.  The
-            ;; raw transcription is captured and erased by our one-shot hook.
+            ;; Satisfy whisper.el's read-only-buffer check for terminals.  We
+            ;; adopt its FFmpeg process and transcribe the audio independently.
             (setq-local whisper-insert-text-at-point nil)
             (setq-local whisper-translate nil)
-            (codex-voice--run-whisper-for-capture))
+            (codex-voice--run-whisper-for-capture capture))
         (if had-local-insert
             (setq-local whisper-insert-text-at-point old-insert)
-          (kill-local-variable 'whisper-insert-text-at-point)))))))
+          (kill-local-variable 'whisper-insert-text-at-point))
+        (if had-local-translate
+            (setq-local whisper-translate old-translate)
+          (kill-local-variable 'whisper-translate)))))))
 
 (provide 'codex-voice)
 
