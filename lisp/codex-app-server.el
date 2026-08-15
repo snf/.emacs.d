@@ -1,8 +1,9 @@
 ;;; codex-app-server.el --- Shared Codex app-server lifecycle -*- lexical-binding: t; -*-
 
 ;;; Commentary:
-;; Start the persistent Codex/Takopi mobile stack on demand and provide a
-;; per-TUI WebSocket proxy that reports the thread id created by Codex.
+;; Start the persistent Codex/Takopi mobile stack at Emacs startup and on
+;; demand, and provide a per-TUI WebSocket proxy that reports the thread id
+;; created by Codex.
 
 ;;; Code:
 
@@ -185,13 +186,19 @@ TUI opens its resume picker."
         (format "Could not probe the Codex app-server: %s"
                 (error-message-string err)))))))
 
+(defun codex-app-server--display-startup-error (error-message)
+  "Display ERROR-MESSAGE from mobile stack startup."
+  (display-warning 'codex-app-server error-message :error))
+
 ;;;###autoload
-(defun codex-app-server-ensure (ready-callback &optional error-callback)
+(defun codex-app-server-ensure (ready-callback &optional error-callback start-first)
   "Call READY-CALLBACK once the shared app-server is ready.
 
-Start the configured mobile stack after a failed readiness probe.  Concurrent
-callers share the same probe/start attempt.  Call ERROR-CALLBACK with a human
-readable message if startup fails."
+Start the configured mobile stack after a failed readiness probe.  When
+START-FIRST is non-nil, invoke the idempotent launcher before probing; this
+ensures that Takopi is supervised even when an app-server is already listening.
+Concurrent callers share the same start/probe attempt.  Call ERROR-CALLBACK
+with a human-readable message if startup fails."
   (push (cons ready-callback error-callback) codex-app-server--waiters)
   (unless codex-app-server--ensuring
     (setq codex-app-server--ensuring t
@@ -199,7 +206,19 @@ readable message if startup fails."
           codex-app-server--timeout-timer
           (run-at-time codex-app-server-startup-timeout nil
                        #'codex-app-server--fail-timeout))
-    (codex-app-server--probe)))
+    (if start-first
+        (codex-app-server--start-stack)
+      (codex-app-server--probe))))
+
+;;;###autoload
+(defun codex-app-server-start-mobile-stack ()
+  "Start the shared Codex/Takopi mobile stack if necessary.
+
+This function is suitable for `emacs-startup-hook'."
+  (interactive)
+  (codex-app-server-ensure #'ignore
+                           #'codex-app-server--display-startup-error
+                           t))
 
 (defun codex-app-server--proxy-emit-thread (process thread-id)
   (unless (equal thread-id (process-get process 'codex-thread-id))

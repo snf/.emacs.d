@@ -1979,8 +1979,10 @@ See `find-name-arg' to customize the arguments."
   :ensure nil
   :load-path "lisp"
   :commands (codex-app-server-ensure
+             codex-app-server-start-mobile-stack
              codex-app-server-start-proxy
-             codex-app-server-tui-command))
+             codex-app-server-tui-command)
+  :hook (emacs-startup . codex-app-server-start-mobile-stack))
 
 
 (use-package codex-attn

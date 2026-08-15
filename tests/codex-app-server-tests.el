@@ -47,6 +47,18 @@
         (should-not ready)
         (should (equal error "simulated failure"))))))
 
+(ert-deftest codex-app-server-start-first-invokes-mobile-launcher ()
+  (codex-app-server-test--with-state
+    (let ((starts 0)
+          (probes 0))
+      (cl-letf (((symbol-function 'codex-app-server--start-stack)
+                 (lambda () (setq starts (1+ starts))))
+                ((symbol-function 'codex-app-server--probe)
+                 (lambda () (setq probes (1+ probes)))))
+        (codex-app-server-ensure #'ignore nil t)
+        (should (= starts 1))
+        (should (zerop probes))))))
+
 (ert-deftest codex-app-server-start-command-includes-shared-endpoint ()
   (codex-app-server-test--with-state
     (let ((codex-app-server-start-command '("stack" "start"))
