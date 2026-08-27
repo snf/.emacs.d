@@ -44,11 +44,11 @@ The app-server endpoint is appended as `--endpoint ENDPOINT'."
   :type 'string)
 
 (defcustom codex-app-server-codex-program
-  "/home/core/.emacs.d/.cache/codex/bin/codex-0.147.0-resume-cwd"
+  "/home/core/.emacs.d/.cache/codex/bin/codex-0.150.1-resume-cwd"
   "Codex CLI program used by remote Ghostel sessions.
 
-This build backports preservation of the remote cwd override when an active
-TUI opens its resume picker."
+This build preserves the remote cwd override when an active TUI opens its
+resume picker."
   :type 'string)
 
 (defcustom codex-app-server-python-command
