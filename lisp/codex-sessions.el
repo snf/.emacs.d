@@ -1,7 +1,7 @@
 ;;; codex-sessions.el --- Treemacs sidebar for agent sessions -*- lexical-binding: t; -*-
 
 ;;; Commentary:
-;; A standalone Treemacs tree showing live Codex/OpenCode terminal buffers and
+;; A standalone Treemacs tree showing live Codex/OpenCode/OMP terminal buffers and
 ;; highlighting those with actionable `codex-attn' notifications.
 
 ;;; Code:
@@ -14,7 +14,7 @@
 (require 'codex-attn)
 
 (defgroup codex-sessions nil
-  "Sidebar for live Codex/OpenCode sessions."
+  "Sidebar for live Codex/OpenCode/OMP sessions."
   :group 'codex-attn)
 
 (defcustom codex-sessions-buffer-name "*Codex Sessions*"
@@ -33,7 +33,7 @@
   "Side-window slot used by the sessions sidebar."
   :type 'integer)
 
-(defcustom codex-sessions-providers '(codex opencode)
+(defcustom codex-sessions-providers '(codex opencode omp)
   "Notifier providers displayed in the sessions sidebar.
 
 Set this to nil to display every provider known to `codex-attn'."

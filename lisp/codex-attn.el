@@ -1,7 +1,7 @@
-;;; codex-attn.el --- Codex/OpenCode attention indicator -*- lexical-binding: t; -*-
+;;; codex-attn.el --- Codex/OpenCode/OMP attention indicator -*- lexical-binding: t; -*-
 
 ;;; Commentary:
-;; Modeline indicator and session jumping for pending Codex/OpenCode turns.
+;; Modeline indicator and session jumping for pending Codex/OpenCode/OMP turns.
 
 ;;; Code:
 
@@ -11,7 +11,7 @@
 (require 'filenotify)
 
 (defgroup codex-attn nil
-  "Codex/OpenCode attention indicator."
+  "Codex/OpenCode/OMP attention indicator."
   :group 'tools)
 
 (defcustom codex-attn-state-dir
@@ -24,9 +24,15 @@
   "Directory where OpenCode notify writes per-session state files."
   :type 'directory)
 
+(defcustom codex-attn-omp-state-dir
+  (expand-file-name "omp/threads" (or (getenv "XDG_CACHE_HOME") "~/.cache/"))
+  "Directory where Oh My Pi notify writes per-session state files."
+  :type 'directory)
+
 (defcustom codex-attn-providers
   `((codex :state-dir ,codex-attn-state-dir :buffer-prefix "*codex: ")
-    (opencode :state-dir ,codex-attn-opencode-state-dir :buffer-prefix "*opencode: "))
+    (opencode :state-dir ,codex-attn-opencode-state-dir :buffer-prefix "*opencode: ")
+    (omp :state-dir ,codex-attn-omp-state-dir :buffer-prefix "*omp: "))
   "Provider definitions.
 
 Each entry is:
@@ -119,6 +125,7 @@ query functions such as `codex-attn-buffers' and
         (pcase p
           ('codex codex-attn-state-dir)
           ('opencode codex-attn-opencode-state-dir)
+          ('omp codex-attn-omp-state-dir)
           (_ nil)))))
 
 (defun codex-attn--provider-buffer-prefix (provider)

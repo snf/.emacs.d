@@ -78,6 +78,7 @@
               ("m" . magit-project-status)
               ("c" . codex-in-project)
               ("o" . opencode-in-project)
+              ("i" . omp-in-project)
               ;; ("v" . vterm-in-project)
               ("v" . my/ghostel-project-new)
               )
@@ -89,9 +90,10 @@
   (add-to-list 'project-switch-commands '(treemacs-display-current-project-exclusively "Treemacs") t)
   (add-to-list 'project-switch-commands '(codex-in-project "Codex") t)
   (add-to-list 'project-switch-commands '(opencode-in-project "OpenCode") t)
+  (add-to-list 'project-switch-commands '(omp-in-project "Oh My Pi") t)
   ;; (add-to-list 'project-switch-commands '(vterm-in-project "Vterm") t)
   (add-to-list 'project-switch-commands '(my/ghostel-project-new "New Ghostel") t)
-  ;; Include vterm buffers (e.g. codex/opencode) in `project-kill-buffers`.
+  ;; Include vterm buffers (e.g. codex/opencode/omp) in `project-kill-buffers`.
   ;; (add-to-list 'project-kill-buffer-conditions '(derived-mode . vterm-mode) t)
 
   ;; XXX_ in Emacs 29 can be updated to	https://grtcdr.tn/posts/2023-03-01.html
@@ -606,7 +608,8 @@
                      :files (:defaults "etc" "src" "vendor" "build.zig"
                                       "build.zig.zon" "symbols.map"))
   :commands (ghostel ghostel-project codex-in-project
-                     codex-resume-in-project opencode-in-project)
+                     codex-resume-in-project opencode-in-project
+                     omp-in-project)
   :custom
   (ghostel-shell "/bin/bash")
   :config
@@ -717,7 +720,15 @@ DIRECTORY, when non-nil, is used instead of discovering the current project."
     (let ((buf (run-command-in-ghostel-project "opencode" "opencode")))
       (when (and (buffer-live-p buf)
                  (fboundp 'codex-attn-queue-buffer))
-        (codex-attn-queue-buffer buf 'opencode)))))
+        (codex-attn-queue-buffer buf 'opencode))))
+
+  (defun omp-in-project ()
+    "Open Ghostel in the project root and execute Oh My Pi."
+    (interactive)
+    (let ((buf (run-command-in-ghostel-project "omp" "omp")))
+      (when (and (buffer-live-p buf)
+                 (fboundp 'codex-attn-queue-buffer))
+        (codex-attn-queue-buffer buf 'omp)))))
 
 ;; VTerm configuration kept as a fallback/reference.
 ;; (use-package vterm

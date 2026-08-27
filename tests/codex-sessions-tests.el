@@ -49,7 +49,7 @@ Each item in SPECS is (SYMBOL NAME)."
          (codex-attn--sessions-by-buffer (make-hash-table :test 'eq))
          (codex-attn--pending-sessions nil)
          (codex-attn--actionable-session-list nil)
-         (codex-sessions-providers '(codex opencode))
+         (codex-sessions-providers '(codex opencode omp))
          (codex-sessions--last-buffer-signature nil)
          (codex-sessions--refresh-timer nil))
      ,@body))
@@ -71,6 +71,14 @@ Each item in SPECS is (SYMBOL NAME)."
       (should (eq (get-text-property
                    0 'face (codex-sessions--item-icon idle))
                   'codex-sessions-idle-face)))))
+
+(ert-deftest codex-sessions-includes-omp-provider ()
+  (codex-sessions-test--with-state
+    (codex-sessions-test--with-buffers
+        ((session "*omp: project*"))
+      (should (equal (codex-sessions--buffers) (list session)))
+      (should (eq (codex-attn-buffer-provider session) 'omp))
+      (should (equal (codex-sessions--display-name session) "project")))))
 
 (ert-deftest codex-sessions-renders-and-refreshes-renamed-buffer ()
   (codex-sessions-test--with-state

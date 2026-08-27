@@ -52,9 +52,11 @@ the new buffer, using `ghostel-mode' unless MODE is supplied."
   `(let* ((root (make-temp-file "codex-attn-test-" t))
           (codex-attn-state-dir (expand-file-name "codex/threads" root))
           (codex-attn-opencode-state-dir (expand-file-name "opencode/threads" root))
+          (codex-attn-omp-state-dir (expand-file-name "omp/threads" root))
           (codex-attn-providers
            `((codex :state-dir ,codex-attn-state-dir :buffer-prefix "*codex: ")
-             (opencode :state-dir ,codex-attn-opencode-state-dir :buffer-prefix "*opencode: ")))
+             (opencode :state-dir ,codex-attn-opencode-state-dir :buffer-prefix "*opencode: ")
+             (omp :state-dir ,codex-attn-omp-state-dir :buffer-prefix "*omp: ")))
           (codex-attn--emacs-instance-id "test-emacs")
           (codex-attn--pending-sessions nil)
           (codex-attn--actionable-session-list nil)
@@ -67,6 +69,7 @@ the new buffer, using `ghostel-mode' unless MODE is supplied."
          (progn
            (make-directory codex-attn-state-dir t)
            (make-directory codex-attn-opencode-state-dir t)
+           (make-directory codex-attn-omp-state-dir t)
            ,@body)
        (delete-directory root t))))
 
@@ -92,6 +95,28 @@ the new buffer, using `ghostel-mode' unless MODE is supplied."
       ((buf "*opencode: repo*" "/tmp/codex-attn-test/" ghostel-mode))
     (should (eq (codex-attn--buffer-provider buf) 'opencode))
     (should (codex-attn--provider-terminal-buffer-p buf 'opencode))))
+
+(ert-deftest codex-attn-recognizes-omp-ghostel-buffer ()
+  (codex-attn-test--with-buffers
+      ((buf "*omp: repo*" "/tmp/codex-attn-test/" ghostel-mode))
+    (should (eq (codex-attn--buffer-provider buf) 'omp))
+    (should (codex-attn--provider-terminal-buffer-p buf 'omp))))
+
+(ert-deftest codex-attn-maps-omp-notification-by-terminal-identity ()
+  (codex-attn-test--with-state
+    (codex-attn-test--with-buffers
+        ((buf "*omp: repo*" "/tmp/"))
+      (let ((file
+             (codex-attn-test--write-state
+              codex-attn-omp-state-dir "omp-session"
+              :provider "omp"
+              :emacs_instance_id "test-emacs"
+              :terminal_id (buffer-local-value 'codex-attn-terminal-id buf))))
+        (codex-attn--refresh)
+        (should (file-exists-p file))
+        (should (= 1 (length codex-attn--pending-sessions)))
+        (should (eq buf (codex-attn--buffer-for-session
+                         (car codex-attn--pending-sessions))))))))
 
 (ert-deftest codex-attn-public-buffer-status-api ()
   (codex-attn-test--with-state
