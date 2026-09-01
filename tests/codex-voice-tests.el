@@ -15,6 +15,12 @@
                                 (or load-file-name buffer-file-name))))
 (require 'codex-voice)
 
+(ert-deftest codex-voice-does-not-clear-whispers-default-audio-path ()
+  "Loading voice support before Whisper must retain Whisper's WAV filename."
+  (require 'whisper)
+  (should (stringp whisper--temp-file))
+  (should (not (string-empty-p whisper--temp-file))))
+
 (defmacro codex-voice-test--with-target (&rest body)
   "Run BODY in an isolated Codex Ghostel buffer with saved context."
   (declare (indent 0) (debug t))

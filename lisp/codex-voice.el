@@ -24,7 +24,9 @@
 (defvar whisper-insert-text-at-point nil)
 (defvar whisper-translate nil)
 (defvar whisper--recording-process nil)
-(defvar whisper--temp-file nil)
+;; Do not assign this variable: when codex-voice loads before whisper.el,
+;; assigning nil prevents Whisper from installing its default WAV path.
+(defvar whisper--temp-file)
 
 (defgroup codex-voice nil
   "Context-aware dictated follow-ups for Codex in Ghostel."
