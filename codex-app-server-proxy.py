@@ -36,12 +36,35 @@ def _thread_id_from_result(message: dict[str, Any]) -> str | None:
     return thread_id if isinstance(thread_id, str) else None
 
 
+def _turn_id_from_result(message: dict[str, Any]) -> str | None:
+    result = message.get("result")
+    if not isinstance(result, dict):
+        return None
+    turn = result.get("turn")
+    if not isinstance(turn, dict):
+        return None
+    turn_id = turn.get("id")
+    return turn_id if isinstance(turn_id, str) else None
+
+
+def _turn_id_from_notification(message: dict[str, Any]) -> str | None:
+    params = message.get("params")
+    if not isinstance(params, dict):
+        return None
+    turn = params.get("turn")
+    if isinstance(turn, dict) and isinstance(turn.get("id"), str):
+        return turn["id"]
+    turn_id = params.get("turnId")
+    return turn_id if isinstance(turn_id, str) else None
+
+
 async def _run_proxy(endpoint: str, host: str) -> None:
     reported_thread: str | None = None
 
     async def handler(client: ServerConnection) -> None:
         nonlocal reported_thread
-        request_methods: dict[str, str] = {}
+        request_context: dict[str, tuple[str, str | None]] = {}
+        turn_threads: dict[str, str] = {}
 
         def report(thread_id: str | None) -> None:
             nonlocal reported_thread
@@ -61,8 +84,18 @@ async def _run_proxy(endpoint: str, host: str) -> None:
                             if isinstance(request_id, (str, int)) and method in {
                                 "thread/start",
                                 "thread/resume",
+                                "turn/start",
                             }:
-                                request_methods[str(request_id)] = str(method)
+                                params = message.get("params")
+                                thread_id = (
+                                    params.get("threadId")
+                                    if isinstance(params, dict)
+                                    else None
+                                )
+                                request_context[str(request_id)] = (
+                                    str(method),
+                                    thread_id if isinstance(thread_id, str) else None,
+                                )
                         await upstream.send(raw)
 
                 async def toward_client() -> None:
@@ -70,14 +103,40 @@ async def _run_proxy(endpoint: str, host: str) -> None:
                         message = _parse_message(raw)
                         if message is not None:
                             response_id = message.get("id")
-                            if isinstance(
-                                response_id, (str, int)
-                            ) and request_methods.pop(str(response_id), None):
-                                # A shared app-server can deliver lifecycle
-                                # notifications for other threads.  Only a
-                                # response to this TUI's own selection request
-                                # identifies the buffer's thread.
-                                report(_thread_id_from_result(message))
+                            context = (
+                                request_context.pop(str(response_id), None)
+                                if isinstance(response_id, (str, int))
+                                else None
+                            )
+                            if context is not None:
+                                method, request_thread_id = context
+                                if method in {"thread/start", "thread/resume"}:
+                                    # A shared app-server can deliver lifecycle
+                                    # notifications for other threads.  Only a
+                                    # response to this TUI's own selection request
+                                    # identifies the buffer's thread.
+                                    report(_thread_id_from_result(message))
+                                elif method == "turn/start":
+                                    turn_id = _turn_id_from_result(message)
+                                    thread_id = request_thread_id or reported_thread
+                                    if turn_id and thread_id:
+                                        turn_threads[turn_id] = thread_id
+                            if message.get("method") == "turn/completed":
+                                turn_id = _turn_id_from_notification(message)
+                                thread_id = (
+                                    turn_threads.pop(turn_id, None)
+                                    if turn_id
+                                    else None
+                                )
+                                # Only report completion for a turn this TUI
+                                # started.  Shared servers broadcast unrelated
+                                # thread notifications to every client.
+                                if thread_id and thread_id == reported_thread:
+                                    _emit(
+                                        "attention",
+                                        thread_id=thread_id,
+                                        turn_id=turn_id,
+                                    )
                         await client.send(raw)
 
                 tasks = {

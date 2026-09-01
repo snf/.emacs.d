@@ -656,6 +656,11 @@ DIRECTORY, when non-nil, is used instead of discovering the current project."
     (when (buffer-live-p buffer)
       (codex-attn-bind-buffer-thread buffer thread-id)))
 
+  (defun codex--remote-turn-complete (buffer thread-id turn-id)
+    "Record a completed remote Codex TURN-ID for terminal BUFFER."
+    (when (buffer-live-p buffer)
+      (codex-attn-notify-buffer buffer 'codex thread-id turn-id)))
+
   (defun codex--queue-buffer (buffer)
     "Add BUFFER to the Codex attention queue."
     (when (and (buffer-live-p buffer)
@@ -673,6 +678,8 @@ DIRECTORY, when non-nil, is used instead of discovering the current project."
         (add-hook 'kill-buffer-hook #'codex--stop-buffer-proxy nil t))
       (codex-app-server-proxy-set-thread-callback
        proxy (apply-partially #'codex--bind-remote-thread buffer))
+      (codex-app-server-proxy-set-attention-callback
+       proxy (apply-partially #'codex--remote-turn-complete buffer))
       (codex--queue-buffer buffer)))
 
   (defun codex--launch-new-remote (project-root)

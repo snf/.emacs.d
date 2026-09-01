@@ -17,22 +17,41 @@ class CodexAppServerProxyTests(unittest.IsolatedAsyncioTestCase):
             async for raw in websocket:
                 message = json.loads(raw)
                 thread_id = message["params"]["threadId"]
-                await websocket.send(
-                    json.dumps(
-                        {
-                            "method": "thread/started",
-                            "params": {"thread": {"id": "unrelated-thread"}},
-                        }
+                if message["method"] in {"thread/start", "thread/resume"}:
+                    await websocket.send(
+                        json.dumps(
+                            {
+                                "method": "thread/started",
+                                "params": {"thread": {"id": "unrelated-thread"}},
+                            }
+                        )
                     )
-                )
-                await websocket.send(
-                    json.dumps(
-                        {
-                            "id": message["id"],
-                            "result": {"thread": {"id": thread_id}},
-                        }
+                    await websocket.send(
+                        json.dumps(
+                            {
+                                "id": message["id"],
+                                "result": {"thread": {"id": thread_id}},
+                            }
+                        )
                     )
-                )
+                elif message["method"] == "turn/start":
+                    turn_id = f"turn-{message['id']}"
+                    await websocket.send(
+                        json.dumps(
+                            {
+                                "id": message["id"],
+                                "result": {"turn": {"id": turn_id}},
+                            }
+                        )
+                    )
+                    await websocket.send(
+                        json.dumps(
+                            {
+                                "method": "turn/completed",
+                                "params": {"turn": {"id": turn_id, "status": "completed"}},
+                            }
+                        )
+                    )
 
         async with serve(upstream_handler, "127.0.0.1", 0) as upstream:
             upstream_port = upstream.sockets[0].getsockname()[1]
@@ -63,6 +82,29 @@ class CodexAppServerProxyTests(unittest.IsolatedAsyncioTestCase):
                     self.assertEqual(response["result"]["thread"]["id"], thread_id)
                     event = json.loads(await process.stdout.readline())
                     self.assertEqual(event, {"type": "thread", "thread_id": thread_id})
+
+                    await client.send(
+                        json.dumps(
+                            {
+                            "id": f"turn-{request_id}",
+                            "method": "turn/start",
+                            "params": {"threadId": thread_id},
+                            }
+                        )
+                    )
+                    turn_response = json.loads(await client.recv())
+                    self.assertEqual(turn_response["result"]["turn"]["id"], f"turn-turn-{request_id}")
+                    completed = json.loads(await client.recv())
+                    self.assertEqual(completed["method"], "turn/completed")
+                    attention = json.loads(await process.stdout.readline())
+                    self.assertEqual(
+                        attention,
+                        {
+                            "type": "attention",
+                            "thread_id": thread_id,
+                            "turn_id": f"turn-turn-{request_id}",
+                        },
+                    )
 
                 async with connect(ready["endpoint"]) as active_tui:
                     await round_trip(

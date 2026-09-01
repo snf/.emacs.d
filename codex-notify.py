@@ -262,6 +262,16 @@ def main():
             pending_since = float(old.get("pending_since", pending_since))
         except (TypeError, ValueError):
             pass
+        # A shared app-server invokes this hook without a terminal-specific
+        # environment.  If its per-TUI proxy already associated this thread
+        # with an Emacs terminal, retain that exact association rather than
+        # replacing it with null values.
+        if not emacs_instance_id:
+            old_emacs_instance_id = old.get("emacs_instance_id")
+            old_terminal_id = old.get("terminal_id")
+            if isinstance(old_emacs_instance_id, str) and isinstance(old_terminal_id, str):
+                emacs_instance_id = old_emacs_instance_id
+                terminal_id = old_terminal_id
 
     turn_id = _pick_any(event, "turn_id", "turnId", "turn-id")
     input_messages = _pick_any(

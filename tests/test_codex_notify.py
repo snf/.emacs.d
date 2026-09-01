@@ -73,6 +73,29 @@ class CodexNotifyTests(unittest.TestCase):
         self.assertIsNone(self.read()["terminal_id"])
         self.assertEqual(self.read_context()["thread_id"], "thread-1")
 
+    def test_shared_server_notification_preserves_proxy_terminal_identity(self):
+        self.state_dir.mkdir(parents=True)
+        (self.state_dir / "thread-1.json").write_text(
+            json.dumps(
+                {
+                    "thread_id": "thread-1",
+                    "emacs_instance_id": "emacs-from-proxy",
+                    "terminal_id": "terminal-from-proxy",
+                    "pending_since": 1,
+                }
+            )
+        )
+        env = self.env.copy()
+        env.pop("CODEX_ATTN_EMACS_INSTANCE_ID")
+        env.pop("CODEX_ATTN_TERMINAL_ID")
+        self.notify(
+            {"type": "agent-turn-complete", "thread_id": "thread-1"},
+            env=env,
+        )
+        data = self.read()
+        self.assertEqual(data["emacs_instance_id"], "emacs-from-proxy")
+        self.assertEqual(data["terminal_id"], "terminal-from-proxy")
+
     def test_persists_last_turn_context_by_thread(self):
         self.notify(
             {

@@ -226,6 +226,11 @@ This function is suitable for `emacs-startup-hook'."
     (when-let ((callback (process-get process 'codex-thread-callback)))
       (funcall callback thread-id))))
 
+(defun codex-app-server--proxy-emit-attention (process thread-id turn-id)
+  "Report a completed TURN-ID for this proxy's THREAD-ID."
+  (when-let ((callback (process-get process 'codex-attention-callback)))
+    (funcall callback thread-id turn-id)))
+
 (defun codex-app-server--proxy-handle-line (process line)
   (condition-case nil
       (let* ((json-object-type 'plist)
@@ -241,6 +246,11 @@ This function is suitable for `emacs-startup-hook'."
           ("thread"
            (codex-app-server--proxy-emit-thread
             process (plist-get message :thread_id)))
+          ("attention"
+           (codex-app-server--proxy-emit-attention
+            process
+            (plist-get message :thread_id)
+            (plist-get message :turn_id)))
           ("error"
            (let ((error-message (plist-get message :message)))
              (if-let ((callback
@@ -298,6 +308,11 @@ ERROR-CALLBACK if the proxy exits before or during use."
   (process-put process 'codex-thread-callback callback)
   (when-let ((thread-id (process-get process 'codex-thread-id)))
     (funcall callback thread-id)))
+
+;;;###autoload
+(defun codex-app-server-proxy-set-attention-callback (process callback)
+  "Arrange for CALLBACK to receive this proxy's completed thread and turn IDs."
+  (process-put process 'codex-attention-callback callback))
 
 ;;;###autoload
 (defun codex-app-server-tui-command (directory &optional endpoint thread-id)

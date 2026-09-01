@@ -297,6 +297,57 @@ The returned buffer objects retain their identity when their names change."
     (run-hooks 'codex-attn-state-change-hook))
   thread-id)
 
+;;;###autoload
+(defun codex-attn-notify-buffer (buffer provider thread-id &optional turn-id)
+  "Record a completed THREAD-ID as pending for terminal BUFFER.
+
+This is used by the per-TUI app-server proxy.  Unlike the shared app-server's
+global notify hook, the proxy knows which Ghostel terminal initiated the turn,
+so the state written here has an exact terminal identity.
+
+PROVIDER identifies the terminal integration and TURN-ID, when non-nil,
+identifies the completed turn."
+  (let* ((provider (codex-attn--provider-symbol provider))
+         (state-dir (codex-attn--provider-state-dir provider)))
+    (unless (codex-attn--provider-terminal-buffer-p buffer provider)
+      (error "Not a live %s terminal buffer: %s" provider buffer))
+    (unless (and (stringp thread-id) (not (string-empty-p thread-id)))
+      (error "Invalid %s thread id: %S" provider thread-id))
+    (unless (and state-dir (stringp state-dir))
+      (error "No attention state directory for provider %s" provider))
+    (codex-attn--record-thread-binding buffer thread-id)
+    (make-directory state-dir t)
+    (let* ((file (expand-file-name (concat thread-id ".json") state-dir))
+           (old (and (file-exists-p file)
+                     (codex-attn--read-session-file provider file)))
+           (now (float-time))
+           (data (list :state_version 3
+                       :thread_id thread-id
+                       :provider (symbol-name provider)
+                       :turn_id turn-id
+                       :cwd (or (plist-get old :cwd)
+                                (with-current-buffer buffer default-directory))
+                       :last_assistant_message
+                       (plist-get old :last_assistant_message)
+                       :pending_since (or (plist-get old :pending_since) now)
+                       :last_event_ts now
+                       :type "agent-turn-complete"
+                       :emacs_instance_id codex-attn--emacs-instance-id
+                       :terminal_id
+                       (buffer-local-value 'codex-attn-terminal-id buffer)))
+           (temporary (make-temp-file (expand-file-name ".codex-attn-" state-dir))))
+      (unwind-protect
+          (progn
+            (with-temp-file temporary
+              (insert (json-encode data)))
+            (rename-file temporary file t))
+        (when (file-exists-p temporary)
+          (delete-file temporary)))
+      (if (and (boundp 'codex-attn-mode) codex-attn-mode)
+          (codex-attn--refresh)
+        (run-hooks 'codex-attn-state-change-hook)))
+    thread-id))
+
 (defun codex-attn--current-attn-buffer ()
   (let ((buf (window-buffer (selected-window))))
     (when (codex-attn--buffer-provider buf)

@@ -275,6 +275,20 @@ the new buffer, using `ghostel-mode' unless MODE is supplied."
         (should (eq buf2 (codex-attn--buffer-for-session
                           (car codex-attn--pending-sessions))))))))
 
+(ert-deftest codex-attn-proxy-notification-records-terminal-identity ()
+  (codex-attn-test--with-state
+    (codex-attn-test--with-buffers
+        ((buf "*codex: proxy*" "/tmp/"))
+      (codex-attn-notify-buffer buf 'codex "thread-proxy" "turn-proxy")
+      (codex-attn--refresh)
+      (let ((session (car codex-attn--pending-sessions)))
+        (should (= 1 (length codex-attn--pending-sessions)))
+        (should (equal (codex-attn--session-thread-id session) "thread-proxy"))
+        (should (equal (plist-get session :turn_id) "turn-proxy"))
+        (should (equal (codex-attn--session-emacs-instance-id session)
+                       "test-emacs"))
+        (should (eq buf (codex-attn--buffer-for-session session)))))))
+
 (ert-deftest codex-attn-killing-remote-buffer-preserves-shared-state ()
   (codex-attn-test--with-state
     (codex-attn-test--with-buffers

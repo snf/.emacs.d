@@ -86,7 +86,7 @@
 
 (ert-deftest codex-app-server-proxy-parses-ready-and-thread-events ()
   (let ((process (start-process "codex-proxy-parser-test" nil "true"))
-        ready thread)
+        ready thread attention)
     (unwind-protect
         (progn
           (process-put process 'codex-ready-callback
@@ -97,8 +97,14 @@
            process "{\"type\":\"ready\",\"endpoint\":\"ws://127.0.0.1:1\"}")
           (codex-app-server--proxy-handle-line
            process "{\"type\":\"thread\",\"thread_id\":\"thread-1\"}")
+          (process-put process 'codex-attention-callback
+                       (lambda (thread-id turn-id)
+                         (setq attention (list thread-id turn-id))))
+          (codex-app-server--proxy-handle-line
+           process "{\"type\":\"attention\",\"thread_id\":\"thread-1\",\"turn_id\":\"turn-1\"}")
           (should (equal ready "ws://127.0.0.1:1"))
-          (should (equal thread "thread-1")))
+          (should (equal thread "thread-1"))
+          (should (equal attention '("thread-1" "turn-1"))))
       (when (process-live-p process)
         (delete-process process)))))
 
