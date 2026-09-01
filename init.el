@@ -501,11 +501,6 @@
 
 (use-package magit-delta
   :straight (magit-delta :type git :host github :repo "dandavison/magit-delta")
-  :hook (
-         ;; (magit-mode . magit-delta-mode)
-         ;; (magit-diff-mode . my/magit-diff-buffer-use-github-dark)
-         ;; (magit-revision-mode . my/magit-diff-buffer-use-github-dark)
-         )
   :custom
   (magit-delta-default-light-theme "GitHub")
   (magit-delta-default-dark-theme "OneHalfDark")
@@ -532,9 +527,9 @@
                    :foreground "#f0f6fc"
                    :background "#0d1117")))))
 
-(use-package code-review
-  :straight (code-review :type git :host github :repo "doomelpa/code-review")
-  )
+;; (use-package code-review
+;;   :straight (code-review :type git :host github :repo "doomelpa/code-review")
+;;   )
 
 (use-package git-link
   :straight (git-link :type git :host github :repo "sshaw/git-link")
@@ -607,9 +602,8 @@
   :straight (ghostel :type git :host github :repo "dakra/ghostel"
                      :files (:defaults "etc" "src" "vendor" "build.zig"
                                       "build.zig.zon" "symbols.map"))
-  :commands (ghostel ghostel-project codex-in-project
-                     codex-resume-in-project opencode-in-project
-                     omp-in-project)
+  :commands (ghostel ghostel-project)
+  :demand t
   :custom
   (ghostel-shell "/bin/bash")
   :config
@@ -1359,84 +1353,84 @@ results."
 ;; tools
 ;; ai
 (load-file "~/.emacs.d/secret.el")
-(use-package chatgpt-shell
-  :straight (chatgpt-shell :type git :host github :repo "xenodium/chatgpt-shell")
-  :config
-  (setq chatgpt-shell-system-prompts (nconc chatgpt-shell-system-prompts '(("Chemistry" . "The user is a professional chemist with very limited time.
-                        You treat their time as precious. You do not repeat obvious things, including their query.
-                        You are as concise as possible in responses.
-                        If you don't know the answer, say I don't know.
-                        You never apologize for confusions because it would waste their time.
-                        You use markdown liberally to structure responses.")
-        ("Technical Blogpost" . "Given a draft blog post targeted at developers, your task is to editorialize and improve it by following these guidelines. Before executing changes, allow room for clarifications on any doubts or questions:
-
-1. Establish Credibility:
-   - Ensure the introduction quickly establishes the author’s expertise and experience. Integrate any achievements or notable metrics but maintain a balanced tone to avoid sounding overly boastful.
-
-2. Make the Point Quickly:
-   - Apply the inverted pyramid format by placing critical information at the beginning. Ensure the first sentence addresses the who, what, when, where, and why to facilitate skimming. Review the introduction to ensure it captures the main idea swiftly and addresses why the reader should care. Verify the first three sentences clearly indicate the target audience and the benefits they’ll gain from reading.
-
-3. Broaden Audience Appropriately:
-   - Identify opportunities to expand the potential readership without diluting technical content. Simplify jargon as needed and consider whether minor adjustments could make the content accessible to a broader audience.
-
-4. Plan the Reader’s Journey:
-   - Highlight pathways for reaching the target audience effectively. Evaluate potential keywords, platforms, and strategies that could be mentioned to ensure readers have a practical understanding of how to disseminate their content.
-
-5. Enhance Visual Engagement:
-   - Suggest diagrams, screenshots, or other visual elements that complement and break up large blocks of text. Recommend cost-effective resources for creating or sourcing visuals.
-
-6. Accommodate Skimmers:
-   - Ensure the structure supports skimming by refining headings and subheadings. Check if the text flow includes bulleted lists, concise paragraphs, and key takeaways that are easy to digest at a glance.
-
-7. General Language and Tone:
-   - Maintain a conversational and approachable tone while ensuring technical precision. Simplify overly complex sentences and suggest improvements for clarity and engagement.
-
-Before making any changes, please pause and identify any areas where clarification is needed or additional information would be beneficial.
-
-List these clarification points, and await further instructions before continuing with the enhancements.
-")
-	)))
-
-  (add-to-list 'chatgpt-shell-models
-               (chatgpt-shell-openrouter-make-model
-                :version "deepseek/deepseek-v3"
-                :short-version "deepseek-v3"
-                :label "DeepSeekV3:Free"
-                :context-window 128000
-                :token-width 4))
-
-  (add-to-list 'chatgpt-shell-models
-               (chatgpt-shell-openrouter-make-model
-                :version "deepseek/deepseek-r1-0528"
-                :short-version "deepseek-r1-0528"
-                :label "DeepSeekR1:Free"
-                :context-window 128000
-                :token-width 4))
-  (add-to-list 'chatgpt-shell-models
-               (chatgpt-shell-openrouter-make-model
-                :version "google/gemini-2.5-pro"
-                :short-version "google/gemini-2.5-pro"
-                :label "Gemini2.5 Pro Preview"
-                :context-window 128000
-                :token-width 4))
-
-  ;; (setq chatgpt-shell-models ())
-
-  ;; (advice-add 'chatgpt-shell-openrouter-models :filter-return
-  ;;             #'chatgpt-shell-openrouter-add-models)
-
-  ;; (defun chatgpt-shell-openrouter-add-models (models)
-  ;;   (append models
-  ;;           (list (chatgpt-shell-openrouter-make-model
-  ;;                  :version "deepseek/deepseek-r1:free"
-  ;;                  :short-version "deepseek-r1:free"
-  ;;                  :label "DeepSeekR1:Free"
-  ;;                  :context-window 128000
-  ;;                  ))))
-
-  ;; (advice-add 'chatgpt-shell-openrouter-models :filter-return
-  ;;             #'chatgpt-shell-openrouter-add-models)
-  )
+;; (use-package chatgpt-shell
+;;   :straight (chatgpt-shell :type git :host github :repo "xenodium/chatgpt-shell")
+;;   :config
+;;   (setq chatgpt-shell-system-prompts (nconc chatgpt-shell-system-prompts '(("Chemistry" . "The user is a professional chemist with very limited time.
+;;                         You treat their time as precious. You do not repeat obvious things, including their query.
+;;                         You are as concise as possible in responses.
+;;                         If you don't know the answer, say I don't know.
+;;                         You never apologize for confusions because it would waste their time.
+;;                         You use markdown liberally to structure responses.")
+;;         ("Technical Blogpost" . "Given a draft blog post targeted at developers, your task is to editorialize and improve it by following these guidelines. Before executing changes, allow room for clarifications on any doubts or questions:
+;;
+;; 1. Establish Credibility:
+;;    - Ensure the introduction quickly establishes the author’s expertise and experience. Integrate any achievements or notable metrics but maintain a balanced tone to avoid sounding overly boastful.
+;;
+;; 2. Make the Point Quickly:
+;;    - Apply the inverted pyramid format by placing critical information at the beginning. Ensure the first sentence addresses the who, what, when, where, and why to facilitate skimming. Review the introduction to ensure it captures the main idea swiftly and addresses why the reader should care. Verify the first three sentences clearly indicate the target audience and the benefits they’ll gain from reading.
+;;
+;; 3. Broaden Audience Appropriately:
+;;    - Identify opportunities to expand the potential readership without diluting technical content. Simplify jargon as needed and consider whether minor adjustments could make the content accessible to a broader audience.
+;;
+;; 4. Plan the Reader’s Journey:
+;;    - Highlight pathways for reaching the target audience effectively. Evaluate potential keywords, platforms, and strategies that could be mentioned to ensure readers have a practical understanding of how to disseminate their content.
+;;
+;; 5. Enhance Visual Engagement:
+;;    - Suggest diagrams, screenshots, or other visual elements that complement and break up large blocks of text. Recommend cost-effective resources for creating or sourcing visuals.
+;;
+;; 6. Accommodate Skimmers:
+;;    - Ensure the structure supports skimming by refining headings and subheadings. Check if the text flow includes bulleted lists, concise paragraphs, and key takeaways that are easy to digest at a glance.
+;;
+;; 7. General Language and Tone:
+;;    - Maintain a conversational and approachable tone while ensuring technical precision. Simplify overly complex sentences and suggest improvements for clarity and engagement.
+;;
+;; Before making any changes, please pause and identify any areas where clarification is needed or additional information would be beneficial.
+;;
+;; List these clarification points, and await further instructions before continuing with the enhancements.
+;; ")
+;; 	)))
+;;
+;;   (add-to-list 'chatgpt-shell-models
+;;                (chatgpt-shell-openrouter-make-model
+;;                 :version "deepseek/deepseek-v3"
+;;                 :short-version "deepseek-v3"
+;;                 :label "DeepSeekV3:Free"
+;;                 :context-window 128000
+;;                 :token-width 4))
+;;
+;;   (add-to-list 'chatgpt-shell-models
+;;                (chatgpt-shell-openrouter-make-model
+;;                 :version "deepseek/deepseek-r1-0528"
+;;                 :short-version "deepseek-r1-0528"
+;;                 :label "DeepSeekR1:Free"
+;;                 :context-window 128000
+;;                 :token-width 4))
+;;   (add-to-list 'chatgpt-shell-models
+;;                (chatgpt-shell-openrouter-make-model
+;;                 :version "google/gemini-2.5-pro"
+;;                 :short-version "google/gemini-2.5-pro"
+;;                 :label "Gemini2.5 Pro Preview"
+;;                 :context-window 128000
+;;                 :token-width 4))
+;;
+;;   ;; (setq chatgpt-shell-models ())
+;;
+;;   ;; (advice-add 'chatgpt-shell-openrouter-models :filter-return
+;;   ;;             #'chatgpt-shell-openrouter-add-models)
+;;
+;;   ;; (defun chatgpt-shell-openrouter-add-models (models)
+;;   ;;   (append models
+;;   ;;           (list (chatgpt-shell-openrouter-make-model
+;;   ;;                  :version "deepseek/deepseek-r1:free"
+;;   ;;                  :short-version "deepseek-r1:free"
+;;   ;;                  :label "DeepSeekR1:Free"
+;;   ;;                  :context-window 128000
+;;   ;;                  ))))
+;;
+;;   ;; (advice-add 'chatgpt-shell-openrouter-models :filter-return
+;;   ;;             #'chatgpt-shell-openrouter-add-models)
+;;   )
 
 (use-package gptel
   :straight (gptel :type git :host github :repo "karthink/gptel")
@@ -1500,63 +1494,63 @@ List these clarification points, and await further instructions before continuin
                 '(email-polish . "This is an email I'm writing. Please correct the tone, grammar and syntax whenever needed while keeping it concise and natural."))
 )
 
-(use-package mcp
-  :straight (mcp :type git :host github :repo "lizqwerscott/mcp.el")
-  ;; :custom
-  ;; (mcp-log-level 'debug)
-  :config
-  (setq mcp-hub-servers
-      '(
-        ;; ("google-search" . (
-        ;;                 :command "node"
-        ;;                 :args ("/opt/google-search-mcp/dist/google-search.js")
-        ;;                 :env (:GOOGLE_API_KEY google-search-key
-        ;;                       :GOOGLE_SEARCH_ENGINE_ID "your-custom-search-engine-id"
-        ;;                       )))
-        ;; ("docs-rs" . (
-        ;;               :command "/opt/docs-rs-mcp/target/release/docs-rs-mcp"
-        ;;                          ))
-        ("task-master-ai" . (
-                             :command "npx"
-                             :args ("-y" "--package=task-master-ai" "task-master-ai")
-                             :env (:OPENROUTER_API_KEY chatgpt-shell-openrouter-key)
-                             ))
-
-        ))
-
-  (defun gptel-mcp-register-tool ()
-    (interactive)
-    (let ((tools (mcp-hub-get-all-tool :asyncp t :categoryp t)))
-      (mapcar #'(lambda (tool)
-                  (apply #'gptel-make-tool
-                         tool))
-              tools)))
-
-  (defun gptel-mcp-use-tool ()
-    (interactive)
-    (let ((tools (mcp-hub-get-all-tool :asyncp t :categoryp t)))
-      (mapcar #'(lambda (tool)
-                  (let ((path (list (plist-get tool :category)
-                                    (plist-get tool :name))))
-                    (push (gptel-get-tool path)
-                          gptel-tools)))
-              tools)))
-
-  (defun gptel-mcp-close-use-tool ()
-    (interactive)
-    (let ((tools (mcp-hub-get-all-tool :asyncp t :categoryp t)))
-      (mapcar #'(lambda (tool)
-                  (let ((path (list (plist-get tool :category)
-                                    (plist-get tool :name))))
-                    (setq gptel-tools
-                          (cl-remove-if #'(lambda (tool)
-                                            (equal path
-                                                   (list (gptel-tool-category tool)
-                                                         (gptel-tool-name tool))))
-                                        gptel-tools))))
-              tools)))
-
-)
+;; (use-package mcp
+;;   :straight (mcp :type git :host github :repo "lizqwerscott/mcp.el")
+;;   ;; :custom
+;;   ;; (mcp-log-level 'debug)
+;;   :config
+;;   (setq mcp-hub-servers
+;;       '(
+;;         ;; ("google-search" . (
+;;         ;;                 :command "node"
+;;         ;;                 :args ("/opt/google-search-mcp/dist/google-search.js")
+;;         ;;                 :env (:GOOGLE_API_KEY google-search-key
+;;         ;;                       :GOOGLE_SEARCH_ENGINE_ID "your-custom-search-engine-id"
+;;         ;;                       )))
+;;         ;; ("docs-rs" . (
+;;         ;;               :command "/opt/docs-rs-mcp/target/release/docs-rs-mcp"
+;;         ;;                          ))
+;;         ("task-master-ai" . (
+;;                              :command "npx"
+;;                              :args ("-y" "--package=task-master-ai" "task-master-ai")
+;;                              :env (:OPENROUTER_API_KEY chatgpt-shell-openrouter-key)
+;;                              ))
+;;
+;;         ))
+;;
+;;   (defun gptel-mcp-register-tool ()
+;;     (interactive)
+;;     (let ((tools (mcp-hub-get-all-tool :asyncp t :categoryp t)))
+;;       (mapcar #'(lambda (tool)
+;;                   (apply #'gptel-make-tool
+;;                          tool))
+;;               tools)))
+;;
+;;   (defun gptel-mcp-use-tool ()
+;;     (interactive)
+;;     (let ((tools (mcp-hub-get-all-tool :asyncp t :categoryp t)))
+;;       (mapcar #'(lambda (tool)
+;;                   (let ((path (list (plist-get tool :category)
+;;                                     (plist-get tool :name))))
+;;                     (push (gptel-get-tool path)
+;;                           gptel-tools)))
+;;               tools)))
+;;
+;;   (defun gptel-mcp-close-use-tool ()
+;;     (interactive)
+;;     (let ((tools (mcp-hub-get-all-tool :asyncp t :categoryp t)))
+;;       (mapcar #'(lambda (tool)
+;;                   (let ((path (list (plist-get tool :category)
+;;                                     (plist-get tool :name))))
+;;                     (setq gptel-tools
+;;                           (cl-remove-if #'(lambda (tool)
+;;                                             (equal path
+;;                                                    (list (gptel-tool-category tool)
+;;                                                          (gptel-tool-name tool))))
+;;                                         gptel-tools))))
+;;               tools)))
+;;
+;; )
 
 (use-package acp
   :straight (:host github :repo "xenodium/acp.el")
@@ -1589,33 +1583,33 @@ List these clarification points, and await further instructions before continuin
 ;;   ;; Optional: Set a key binding for the transient menu
 ;;   (global-set-key (kbd "C-c a") 'aider-transient-menu))
 
-(use-package aidermacs
-  :straight (:host github :repo "MatthewZMD/aidermacs" :files ("*.el"))
-  :custom
-  (aidermacs-show-diff-after-change nil)
-  :config
-  ;; (setq aidermacs-program '("uvx python@3.12 -m aider"))
-  ;; (setq aidermacs-extra-args '("--architect" "--model" "openrouter/deepseek/deepseek-r1" "--editor-model" "openrouter/anthropic/claude-3.7-sonnet" "--no-gitignore"))
-  (setq aidermacs-extra-args '("--model" "openrouter/google/gemini-2.5-pro" "--thinking-tokens" "32k" "--no-gitignore" "--edit-format" "diff-fenced"))
-  ;; (setq aidermacs-extra-args '("--model" "o3" "--reasoning-effort" "high"))
-  ;; (setq aidermacs-extra-args '("--model" "openrouter/moonshotai/kimi-k2"))
-  ;; (setq aidermacs-extra-args '("--model" "openrouter/z-ai/glm-4.5"))
-  ;; (setq aidermacs-extra-args '("--architect" "--model" "openrouter/deepseek/deepseek-r1-0528" "--editor-model" "--model" "openrouter/z-ai/glm-4.5"))
-  ;; (setq aidermacs-extra-args '("--model" "openrouter/qwen/qwen3-coder"))
-  ;;  --line-endings crlf
-  (setenv "OPENAI_API_KEY" chatgpt-shell-openai-key)
-  (setenv "OPENROUTER_API_KEY" chatgpt-shell-openrouter-key)
-  (global-set-key (kbd "C-c a") 'aidermacs-transient-menu))
+;; (use-package aidermacs
+;;   :straight (:host github :repo "MatthewZMD/aidermacs" :files ("*.el"))
+;;   :custom
+;;   (aidermacs-show-diff-after-change nil)
+;;   :config
+;;   ;; (setq aidermacs-program '("uvx python@3.12 -m aider"))
+;;   ;; (setq aidermacs-extra-args '("--architect" "--model" "openrouter/deepseek/deepseek-r1" "--editor-model" "openrouter/anthropic/claude-3.7-sonnet" "--no-gitignore"))
+;;   (setq aidermacs-extra-args '("--model" "openrouter/google/gemini-2.5-pro" "--thinking-tokens" "32k" "--no-gitignore" "--edit-format" "diff-fenced"))
+;;   ;; (setq aidermacs-extra-args '("--model" "o3" "--reasoning-effort" "high"))
+;;   ;; (setq aidermacs-extra-args '("--model" "openrouter/moonshotai/kimi-k2"))
+;;   ;; (setq aidermacs-extra-args '("--model" "openrouter/z-ai/glm-4.5"))
+;;   ;; (setq aidermacs-extra-args '("--architect" "--model" "openrouter/deepseek/deepseek-r1-0528" "--editor-model" "--model" "openrouter/z-ai/glm-4.5"))
+;;   ;; (setq aidermacs-extra-args '("--model" "openrouter/qwen/qwen3-coder"))
+;;   ;;  --line-endings crlf
+;;   (setenv "OPENAI_API_KEY" chatgpt-shell-openai-key)
+;;   (setenv "OPENROUTER_API_KEY" chatgpt-shell-openrouter-key)
+;;   (global-set-key (kbd "C-c a") 'aidermacs-transient-menu))
 
-(use-package claude-code-ide
-  :straight (:type git :host github :repo "manzaltu/claude-code-ide.el")
-  :bind ("C-c C-'" . claude-code-ide-menu) ; Set your favorite keybinding
-  :custom
-  (claude-code-ide-cli-path "/usr/local/bin/ccr-wrapper")
-  (claude-code-ide-terminal-backend 'eat)
-  :config
-  (claude-code-ide-emacs-tools-setup) ; Optionally enable Emacs MCP tools
-  )
+;; (use-package claude-code-ide
+;;   :straight (:type git :host github :repo "manzaltu/claude-code-ide.el")
+;;   :bind ("C-c C-'" . claude-code-ide-menu) ; Set your favorite keybinding
+;;   :custom
+;;   (claude-code-ide-cli-path "/usr/local/bin/ccr-wrapper")
+;;   (claude-code-ide-terminal-backend 'eat)
+;;   :config
+;;   (claude-code-ide-emacs-tools-setup) ; Optionally enable Emacs MCP tools
+;;   )
 
 (use-package whisper-input
   :straight nil
@@ -1677,35 +1671,35 @@ List these clarification points, and await further instructions before continuin
 
 )
 
-(use-package copilot
-  ;; :after company-mode
-  :straight (:host github :repo "copilot-emacs/copilot.el" :files ("dist" "*.el"))
-  :bind (:map copilot-mode-map
-              ("C-p" . copilot-accept-completion)
-              ("M-<right>" . copilot-next-completion)
-              ("M-<left>" . copilot-previous-completion)
-              ;; ("s-w" . copilot-accept-completion-by-word)
-              ;; ("s-l" . copilot-accept-completion-by-line)
-              )
-  ;; :hook
-  ;; (rust-mode . copilot-mode)
-  ;; (rust-ts-mode . copilot-mode)
-  ;; :config
-  ;; (defun company-copilot-tab ()
-  ;;   (interactive)
-  ;;   (or (copilot-accept-completion)
-  ;;       (company-indent-or-complete-common nil)))
-
-  ;;       				; modify company-mode behaviors
-  ;; (with-eval-after-load 'company
-  ;;       				; disable inline previews
-  ;;   (delq 'company-preview-if-just-one-frontend company-frontends)
-  ;;       				; enable tab completion
-  ;;   (define-key company-mode-map (kbd "<tab>") 'company-copilot-tab)
-  ;;   (define-key company-mode-map (kbd "TAB") 'company-copilot-tab)
-  ;;   (define-key company-active-map (kbd "<tab>") 'company-copilot-tab)
-  ;;   (define-key company-active-map (kbd "TAB") 'company-copilot-tab))
-  )
+;; (use-package copilot
+;;   ;; :after company-mode
+;;   :straight (:host github :repo "copilot-emacs/copilot.el" :files ("dist" "*.el"))
+;;   :bind (:map copilot-mode-map
+;;               ("C-p" . copilot-accept-completion)
+;;               ("M-<right>" . copilot-next-completion)
+;;               ("M-<left>" . copilot-previous-completion)
+;;               ;; ("s-w" . copilot-accept-completion-by-word)
+;;               ;; ("s-l" . copilot-accept-completion-by-line)
+;;               )
+;;   ;; :hook
+;;   ;; (rust-mode . copilot-mode)
+;;   ;; (rust-ts-mode . copilot-mode)
+;;   ;; :config
+;;   ;; (defun company-copilot-tab ()
+;;   ;;   (interactive)
+;;   ;;   (or (copilot-accept-completion)
+;;   ;;       (company-indent-or-complete-common nil)))
+;;
+;;   ;;       				; modify company-mode behaviors
+;;   ;; (with-eval-after-load 'company
+;;   ;;       				; disable inline previews
+;;   ;;   (delq 'company-preview-if-just-one-frontend company-frontends)
+;;   ;;       				; enable tab completion
+;;   ;;   (define-key company-mode-map (kbd "<tab>") 'company-copilot-tab)
+;;   ;;   (define-key company-mode-map (kbd "TAB") 'company-copilot-tab)
+;;   ;;   (define-key company-active-map (kbd "<tab>") 'company-copilot-tab)
+;;   ;;   (define-key company-active-map (kbd "TAB") 'company-copilot-tab))
+;;   )
 
 (use-package minuet
   ;; :after company-mode
