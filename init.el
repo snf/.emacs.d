@@ -1266,7 +1266,7 @@ results."
   :init
   (setq rust-indent-offset 4)
   (setenv "CARGO_TARGET_DIR" "/tmp/cargo_build")
-  (setenv "CARGO_BUILD_JOBS" "8")
+  (setenv "CARGO_BUILD_JOBS" "5")
   ;; (add-to-list 'auto-mode-alist '("\\.rs\\'" . rust-ts-mode))
   )
 
