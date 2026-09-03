@@ -54,6 +54,22 @@
       (should (equal (plist-get context :last_assistant_message)
                      "Choose automatic or review.")))))
 
+(ert-deftest codex-voice-falls-back-to-live-terminal-context ()
+  (codex-voice-test--with-target
+    (delete-file (codex-voice--context-file (current-buffer)))
+    (erase-buffer)
+    (insert "Older output that remains in the terminal.\n"
+            "Latest Codex progress update.")
+    (let ((codex-voice-live-context-max-chars 40))
+      (let ((context (codex-voice--read-context (current-buffer))))
+        (should (equal (plist-get context :context_version) 0))
+        (should (equal (plist-get context :thread_id) "thread-voice"))
+        (should (equal (plist-get context :terminal_id) "terminal-voice"))
+        (should (string-match-p "Latest Codex progress update"
+                                (plist-get context :last_assistant_message)))
+        (should (<= (length (plist-get context :last_assistant_message))
+                    40))))))
+
 (ert-deftest codex-voice-prompt-includes-conversation-and-dictation ()
   (codex-voice-test--with-target
     (let ((prompt

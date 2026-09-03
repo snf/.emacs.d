@@ -73,6 +73,13 @@ dictation, leaving the polished text in the Codex composer for review."
   "Directory containing per-thread context from `codex-notify.py'."
   :type 'directory)
 
+(defcustom codex-voice-live-context-max-chars 16384
+  "Maximum number of terminal characters used as fallback context.
+
+This fallback keeps voice dictation usable for active or old Codex threads
+that do not yet have a completed-turn record in `codex-voice-context-dir'."
+  :type 'integer)
+
 (defvar codex-voice--capture nil)
 (defvar codex-voice--transcription-processes nil)
 (defvar codex-voice--formatter-processes nil)
@@ -109,28 +116,50 @@ written by older notifier versions."
      ((and terminal-file (file-exists-p terminal-file)) terminal-file)
      (thread-file))))
 
+(defun codex-voice--live-context (buffer)
+  "Return bounded context from the live Codex terminal BUFFER.
+
+This is a fallback for threads without a completed-turn context file.  The
+terminal tail can contain status and tool output as well as conversation text,
+but it still gives the formatter useful local context without delaying audio
+capture or scanning a potentially very large Codex rollout file."
+  (when (buffer-live-p buffer)
+    (with-current-buffer buffer
+      (let* ((end (point-max))
+             (start (max (point-min)
+                         (- end (max 1 codex-voice-live-context-max-chars))))
+             (text (string-trim
+                    (buffer-substring-no-properties start end))))
+        (unless (string-empty-p text)
+          (list :context_version 0
+                :thread_id (codex-voice--thread-id buffer)
+                :provider "codex"
+                :terminal_id (codex-voice--terminal-id buffer)
+                :last_assistant_message text))))))
+
 (defun codex-voice--read-context (buffer)
-  "Read and validate the last completed Codex turn for BUFFER."
+  "Read the best available validated Codex context for BUFFER."
   (let ((file (codex-voice--context-file buffer)))
-    (unless (and file (file-readable-p file))
-      (user-error
-       "No completed Codex response recorded for this terminal yet"))
-    (let* ((json-object-type 'plist)
-           (json-key-type 'keyword)
-           (json-array-type 'list)
-           (json-false nil)
-           (context (json-read-file file))
-           (thread-id (codex-voice--thread-id buffer))
-           (terminal-id (codex-voice--terminal-id buffer)))
-      (unless (and (equal (plist-get context :provider) "codex")
-                   (if thread-id
-                       (equal (plist-get context :thread_id) thread-id)
-                     (equal (plist-get context :terminal_id) terminal-id))
-                   (stringp (plist-get context :last_assistant_message))
-                   (not (string-blank-p
-                         (plist-get context :last_assistant_message))))
-        (user-error "The saved Codex context for this terminal is invalid"))
-      context)))
+    (if (and file (file-readable-p file))
+        (let* ((json-object-type 'plist)
+               (json-key-type 'keyword)
+               (json-array-type 'list)
+               (json-false nil)
+               (context (json-read-file file))
+               (thread-id (codex-voice--thread-id buffer))
+               (terminal-id (codex-voice--terminal-id buffer)))
+          (unless (and (equal (plist-get context :provider) "codex")
+                       (if thread-id
+                           (equal (plist-get context :thread_id) thread-id)
+                         (equal (plist-get context :terminal_id) terminal-id))
+                       (stringp (plist-get context :last_assistant_message))
+                       (not (string-blank-p
+                             (plist-get context :last_assistant_message))))
+            (user-error "The saved Codex context for this terminal is invalid"))
+          context)
+      (or (codex-voice--live-context buffer)
+          (user-error
+           "No Codex conversation context is available in this terminal")))))
 
 (defun codex-voice--formatter-prompt (context dictation)
   "Build the formatter prompt from CONTEXT and DICTATION."
