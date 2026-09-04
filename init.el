@@ -1100,6 +1100,12 @@ results."
   )
 
 (use-package markdown-mode
+  :init
+  (defun my/markdown-use-xwidget-webkit ()
+    "Open web links from this Markdown buffer in xwidget WebKit."
+    (setq-local browse-url-browser-function
+                #'xwidget-webkit-browse-url))
+  :hook (markdown-mode . my/markdown-use-xwidget-webkit)
   :bind (:map markdown-mode-map
 	      ("C-c <down>" . nil)
 	      ("C-c <up>" . nil)
@@ -1107,6 +1113,18 @@ results."
 	      ("C-c <right>" . nil)
 	      )
   )
+
+(use-package xwidget
+  :straight nil
+  :ensure nil
+  :if (featurep 'xwidget-internal)
+  :init
+  (defun my/xwidget-webkit-disable-kill-query ()
+    "Do not ask for confirmation when killing a WebKit buffer."
+    (setq-local kill-buffer-query-functions
+                (remq #'xwidget-kill-buffer-query-function
+                      kill-buffer-query-functions)))
+  :hook (xwidget-webkit-mode . my/xwidget-webkit-disable-kill-query))
 
 (use-package valign
   :straight (:host github :repo "casouri/valign" :branch "master")
@@ -1118,30 +1136,18 @@ results."
 
 (use-package markdown-table-wrap
   :straight (:host github :repo "dnouri/markdown-table-wrap" :branch "main")
-  ;; :custom
-  ;; ;; Measure widths from visible text only (for markdown-hide-markup)
-  ;; (markdown-table-wrap table-text 60 nil t)
-  ;; ;; :hook
-  ;; ;; (markdown-mode . )
-  ;; :init
-  ;; (defun my-wrap-table-at-point ()
-  ;; "Wrap the pipe table at point to fit the window."
-  ;; (interactive)
-  ;; (save-excursion
-  ;;   (let* ((beg (progn (re-search-backward "^|" nil t)
-  ;;                      (line-beginning-position)))
-  ;;          (end (progn (re-search-forward "^[^|]" nil t)
-  ;;                      (line-beginning-position)))
-  ;;          (text (buffer-substring-no-properties beg (1- end)))
-  ;;          (wrapped (markdown-table-wrap
-  ;;                    text (window-width)
-  ;;                    nil                     ; max cell height
-  ;;                    markdown-hide-markup))) ; t when markup hidden
-  ;;     (unless (equal wrapped text)
-  ;;       (delete-region beg (1- end))
-  ;;       (goto-char beg)
-  ;;       (insert wrapped)))))
   )
+
+(use-package markdown-table-display
+  :straight nil
+  :ensure nil
+  :load-path "lisp"
+  :after (markdown-mode markdown-table-wrap)
+  :commands (markdown-table-display-mode markdown-table-display-refresh
+             markdown-table-display-toggle)
+  :hook (markdown-mode . markdown-table-display--maybe-enable)
+  :bind (:map markdown-mode-map
+              ("C-c |" . markdown-table-display-toggle)))
 
 (use-package opencl-mode
   :mode "\\.cl\\'"
