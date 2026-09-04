@@ -58,6 +58,17 @@ def _turn_id_from_notification(message: dict[str, Any]) -> str | None:
     return turn_id if isinstance(turn_id, str) else None
 
 
+def _thread_id_from_notification(message: dict[str, Any]) -> str | None:
+    params = message.get("params")
+    if not isinstance(params, dict):
+        return None
+    thread = params.get("thread")
+    if isinstance(thread, dict) and isinstance(thread.get("id"), str):
+        return thread["id"]
+    thread_id = params.get("threadId")
+    return thread_id if isinstance(thread_id, str) else None
+
+
 async def _run_proxy(endpoint: str, host: str) -> None:
     reported_thread: str | None = None
 
@@ -128,6 +139,7 @@ async def _run_proxy(endpoint: str, host: str) -> None:
                                     if turn_id
                                     else None
                                 )
+                                thread_id = thread_id or _thread_id_from_notification(message)
                                 # Only report completion for a turn this TUI
                                 # started.  Shared servers broadcast unrelated
                                 # thread notifications to every client.

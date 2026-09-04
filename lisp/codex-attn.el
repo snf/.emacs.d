@@ -830,9 +830,12 @@ ORDER can be `fifo` or `recent`."
                provider (or thread-id "unknown")))))
 
 (defun codex-attn-jump-most-recent ()
-  "Jump to the most recent pending session."
+  "Jump to the oldest pending session.
+
+Acknowledging only the selected session leaves later completions pending, so
+repeating the command advances through attention in completion order."
   (interactive)
-  (let ((sessions (codex-attn-pending-sessions 'recent)))
+  (let ((sessions (codex-attn-pending-sessions 'fifo)))
     (if sessions
         (codex-attn--jump-to-session (car sessions))
       (message "codex-attn: no pending sessions."))))
