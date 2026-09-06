@@ -137,6 +137,59 @@
         (when (buffer-live-p source)
           (kill-buffer source))))))
 
+(ert-deftest markdown-table-display-toggle-preserves-location-and-q-closes-view ()
+  (save-window-excursion
+    (let ((source (generate-new-buffer " *table-display-location-source*"))
+          view
+          target-line
+          start-line)
+      (unwind-protect
+          (progn
+            (set-window-buffer (selected-window) source)
+            (with-current-buffer source
+              (dotimes (number 18)
+                (insert (format "Prelude line %02d\n" number)))
+              (insert (concat
+                       "| Name | Detail |\n"
+                       "|---|---|\n"
+                       "| target | words kept near point |\n"))
+              (dotimes (number 30)
+                (insert (format "Following line %02d\n" number)))
+              (markdown-mode)
+              (markdown-table-display-mode 1))
+            ;; Return to the source, choose a point and scroll position, then
+            ;; enter the view again as a user would with C-c |.
+            (with-current-buffer (window-buffer (selected-window))
+              (markdown-table-display-toggle))
+            (with-current-buffer source
+              (goto-char (point-min))
+              (forward-line 12)
+              (setq start-line (line-beginning-position))
+              (search-forward "target")
+              (setq target-line (line-beginning-position))
+              (set-window-point (selected-window) (point))
+              (set-window-start (selected-window) start-line t)
+              (markdown-table-display-toggle))
+            (setq view (window-buffer (selected-window)))
+            (with-current-buffer view
+              (should (derived-mode-p 'markdown-table-display-view-mode))
+              (should (= (markdown-table-display--property-at
+                          (window-point (selected-window))
+                          'markdown-table-source-position)
+                         target-line))
+              (should (= (markdown-table-display--property-at
+                          (window-start (selected-window))
+                          'markdown-table-source-position)
+                         start-line))
+              (should (eq (lookup-key markdown-table-display-view-mode-map
+                                      (kbd "q"))
+                          #'markdown-table-display-quit))
+              (markdown-table-display-quit))
+            (should-not (buffer-live-p view))
+            (should (eq (window-buffer (selected-window)) source)))
+        (when (buffer-live-p source)
+          (kill-buffer source))))))
+
 (ert-deftest markdown-table-display-revert-reloads-source-and-view ()
   (let ((file (make-temp-file "markdown-table-display-" nil ".md"))
         source

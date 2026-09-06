@@ -82,11 +82,13 @@
   (setq-local revert-buffer-function
               #'markdown-table-display--revert-from-source)
   (setq-local header-line-format
-              " Copyable table view — r: reload disk; RET/click: open link; C-c |: edit source")
+              " Copyable table view — q: close; r: reload disk; RET/click: open link; C-c |: edit source")
   (markdown-table-display--preserve-link-properties)
   (visual-line-mode 1))
 
 (define-key markdown-table-display-view-mode-map (kbd "r") #'revert-buffer)
+(define-key markdown-table-display-view-mode-map (kbd "q")
+  #'markdown-table-display-quit)
 
 (defun markdown-table-display-open-link (&optional event)
   "Open the generated table link at point or mouse EVENT."
@@ -301,29 +303,60 @@ IGNORE-AUTO and NOCONFIRM have the same meanings as for `revert-buffer'."
                "\n"))
             rows)))))))
 
-(defun markdown-table-display--render-table (beginning end width)
-  "Render table between BEGINNING and END as copyable text at WIDTH."
+(defun markdown-table-display--render-table
+    (beginning end width &optional source-offset)
+  "Render table between BEGINNING and END as copyable text at WIDTH.
+
+SOURCE-OFFSET is added to positions recorded for navigation back to the
+source buffer."
   (let* ((ends-in-newline (and (> end beginning) (eq (char-before end) ?\n)))
          (text-end (if ends-in-newline (1- end) end))
          (source (buffer-substring-no-properties beginning text-end))
          (rows (markdown-table-display--render-rows source width))
          (position beginning)
+         (source-offset (or source-offset 0))
          (rendered nil))
     (dolist (row rows)
       ;; This property makes C-c | return to the corresponding source row.
-      (push (propertize row 'markdown-table-source-position position) rendered)
+      (push (propertize row 'markdown-table-source-position
+                        (+ source-offset position))
+            rendered)
       (setq position (save-excursion
                        (goto-char position)
                        (min end (line-beginning-position 2)))))
     (concat (string-join (nreverse rendered) "\n")
             (and ends-in-newline "\n"))))
 
-(defun markdown-table-display--render-buffer-string (text width)
-  "Return TEXT with real, copyable tables reflowed to WIDTH."
+(defun markdown-table-display--render-verbatim
+    (beginning end &optional source-offset)
+  "Return text from BEGINNING to END with source-line navigation properties.
+
+SOURCE-OFFSET is added to the recorded buffer positions."
+  (let ((position beginning)
+        (source-offset (or source-offset 0))
+        pieces)
+    (while (< position end)
+      (let ((next (save-excursion
+                    (goto-char position)
+                    (min end (line-beginning-position 2)))))
+        (push (propertize
+               (buffer-substring-no-properties position next)
+               'markdown-table-source-position (+ source-offset position)
+               'markdown-table-source-verbatim t)
+              pieces)
+        (setq position next)))
+    (apply #'concat (nreverse pieces))))
+
+(defun markdown-table-display--render-buffer-string
+    (text width &optional source-offset)
+  "Return TEXT with real, copyable tables reflowed to WIDTH.
+
+SOURCE-OFFSET is added to positions recorded for source navigation."
   (with-temp-buffer
     (insert text)
     (let ((pieces nil)
-          (last (point-min)))
+          (last (point-min))
+          (source-offset (or source-offset 0)))
       (goto-char (point-min))
       (while (re-search-forward markdown-table-display--separator-regexp nil t)
         (let* ((separator (line-beginning-position))
@@ -334,14 +367,65 @@ IGNORE-AUTO and NOCONFIRM have the same meanings as for `revert-buffer'."
            ((markdown-table-wrap-inside-code-fence-p (car bounds))
             (goto-char (cdr bounds)))
            (t
-            (push (buffer-substring last (car bounds)) pieces)
+            (push (markdown-table-display--render-verbatim
+                   last (car bounds) source-offset)
+                  pieces)
             (push (markdown-table-display--render-table
-                   (car bounds) (cdr bounds) width)
+                   (car bounds) (cdr bounds) width source-offset)
                   pieces)
             (setq last (cdr bounds))
             (goto-char last)))))
-      (push (buffer-substring last (point-max)) pieces)
+      (push (markdown-table-display--render-verbatim
+             last (point-max) source-offset)
+            pieces)
       (apply #'concat (nreverse pieces)))))
+
+(defun markdown-table-display--property-at (position property)
+  "Return PROPERTY at POSITION, checking the preceding character as fallback."
+  (or (get-text-property position property)
+      (and (> position (point-min))
+           (get-text-property (1- position) property))))
+
+(defun markdown-table-display--view-position-for-source
+    (view source source-position)
+  "Return the position in VIEW corresponding to SOURCE-POSITION in SOURCE."
+  (let (source-line source-column)
+    (with-current-buffer source
+      (save-excursion
+        (goto-char (min (max source-position (point-min)) (point-max)))
+        (setq source-line (line-beginning-position)
+              source-column (current-column))))
+    (with-current-buffer view
+      (let ((position (text-property-any
+                       (point-min) (point-max)
+                       'markdown-table-source-position source-line)))
+        (if (not position)
+            (point-max)
+          (save-excursion
+            (goto-char position)
+            ;; Verbatim lines have a one-to-one horizontal mapping.  A table
+            ;; row is only approximate because markup is hidden and cells may
+            ;; have wrapped, but retaining its source column is still a useful
+            ;; placement within the corresponding rendered row.
+            (move-to-column source-column)
+            (point)))))))
+
+(defun markdown-table-display--source-position-for-view
+    (source view-position)
+  "Return the position in SOURCE corresponding to VIEW-POSITION."
+  (let (source-line view-column)
+    (save-excursion
+      (goto-char (min (max view-position (point-min)) (point-max)))
+      (setq source-line
+            (markdown-table-display--property-at
+             (point) 'markdown-table-source-position)
+            view-column (current-column)))
+    (when source-line
+      (with-current-buffer source
+        (save-excursion
+          (goto-char (min (max source-line (point-min)) (point-max)))
+          (move-to-column view-column)
+          (point))))))
 
 (defun markdown-table-display--view-killed ()
   "Forget this view in its associated source buffer."
@@ -398,7 +482,7 @@ IGNORE-AUTO and NOCONFIRM have the same meanings as for `revert-buffer'."
                  (rendered (markdown-table-display--render-buffer-string
                             (buffer-substring-no-properties
                              (point-min) (point-max))
-                            width))
+                            width (1- (point-min))))
                  (window-lines
                   (mapcar
                    (lambda (window)
@@ -421,40 +505,65 @@ IGNORE-AUTO and NOCONFIRM have the same meanings as for `revert-buffer'."
 (defun markdown-table-display--show-view (source &optional window)
   "Show SOURCE's refreshed table view in WINDOW or its current windows."
   (with-current-buffer source
-    (setq markdown-table-display--source-point (point))
-    (markdown-table-display-refresh)
-    (let ((view markdown-table-display--view-buffer)
-          (windows (if window
-                       (list window)
-                     (get-buffer-window-list source nil t))))
+    (let* ((saved-source-point (point))
+           (windows (if window
+                        (list window)
+                      (get-buffer-window-list source nil t)))
+           (window-positions
+            (mapcar (lambda (source-window)
+                      (list source-window
+                            (window-point source-window)
+                            (window-start source-window)))
+                    windows)))
+      (setq markdown-table-display--source-point saved-source-point)
+      (markdown-table-display-refresh)
+      (let ((view markdown-table-display--view-buffer))
       (when (buffer-live-p view)
-        (dolist (source-window windows)
-          (when (window-live-p source-window)
-            (set-window-buffer source-window view)))
-        (with-current-buffer view
-          (goto-char (point-min)))))))
+          (if window-positions
+              (dolist (entry window-positions)
+                (pcase-let ((`(,source-window ,source-point ,source-start)
+                             entry))
+                  (when (window-live-p source-window)
+                    (let ((view-point
+                           (markdown-table-display--view-position-for-source
+                            view source source-point))
+                          (view-start
+                           (markdown-table-display--view-position-for-source
+                            view source source-start)))
+                      (set-window-buffer source-window view)
+                      (set-window-point source-window view-point)
+                      (set-window-start source-window view-start t)))))
+            (with-current-buffer view
+              (goto-char
+               (markdown-table-display--view-position-for-source
+                view source saved-source-point)))))))))
+
+(defun markdown-table-display--show-source-in-window (window source)
+  "Replace the table view in WINDOW with SOURCE at the corresponding location."
+  (let* ((view-point (window-point window))
+         (view-start (window-start window))
+         (source-point
+          (or (markdown-table-display--source-position-for-view
+               source view-point)
+              (buffer-local-value 'markdown-table-display--source-point source)
+              (with-current-buffer source (point-min))))
+         (source-start
+          (markdown-table-display--source-position-for-view source view-start)))
+    (set-window-buffer window source)
+    (set-window-point window source-point)
+    (when source-start
+      (set-window-start window source-start t))))
 
 ;;;###autoload
 (defun markdown-table-display-toggle ()
   "Switch between the copyable table view and its writable source."
   (interactive)
   (if (derived-mode-p 'markdown-table-display-view-mode)
-      (let* ((source markdown-table-display--source-buffer)
-             (source-position
-              (or (get-text-property (point) 'markdown-table-source-position)
-                  (and (> (point) (point-min))
-                       (get-text-property (1- (point))
-                                          'markdown-table-source-position)))))
+      (let ((source markdown-table-display--source-buffer))
         (unless (buffer-live-p source)
           (user-error "The source buffer no longer exists"))
-        (set-window-buffer (selected-window) source)
-        (let ((source-point
-               (with-current-buffer source
-                 (goto-char (or source-position
-                                markdown-table-display--source-point
-                                (point-min)))
-                 (point))))
-          (set-window-point (selected-window) source-point))
+        (markdown-table-display--show-source-in-window
+         (selected-window) source)
         (message "Editing writable Markdown source; C-c | returns to the view"))
     (unless (derived-mode-p 'markdown-mode)
       (user-error "This command is only available in Markdown buffers"))
@@ -462,6 +571,18 @@ IGNORE-AUTO and NOCONFIRM have the same meanings as for `revert-buffer'."
         (markdown-table-display--show-view (current-buffer)
                                            (selected-window))
       (markdown-table-display-mode 1))))
+
+(defun markdown-table-display-quit ()
+  "Kill the generated table view and return its windows to the source buffer."
+  (interactive)
+  (unless (derived-mode-p 'markdown-table-display-view-mode)
+    (user-error "This is not a Markdown table view"))
+  (let ((view (current-buffer))
+        (source markdown-table-display--source-buffer))
+    (when (buffer-live-p source)
+      (dolist (window (get-buffer-window-list view nil t))
+        (markdown-table-display--show-source-in-window window source)))
+    (kill-buffer view)))
 
 (defun markdown-table-display--run-scheduled-refresh (source)
   "Refresh SOURCE if its table display mode is still active."
