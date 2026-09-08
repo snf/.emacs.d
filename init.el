@@ -1149,6 +1149,56 @@ results."
   :bind (:map markdown-mode-map
               ("C-c |" . markdown-table-display-toggle)))
 
+(use-package grip-mode
+  :straight (:host github :repo "seagle0128/grip-mode")
+  :commands (grip-mode)
+  :init
+  ;; `go-grip' is installed here rather than in the root-owned Go GOBIN
+  ;; directory used by this machine.
+  (let ((my/local-bin (expand-file-name ".local/bin" (getenv "HOME"))))
+    (when (file-directory-p my/local-bin)
+      (add-to-list 'exec-path my/local-bin)
+      (unless (member my/local-bin (parse-colon-path (getenv "PATH")))
+        (setenv "PATH" (concat my/local-bin path-separator (getenv "PATH"))))))
+  (defun markdown-github-preview--source-buffer ()
+    "Return the source buffer when called from a table display buffer."
+    (if (and (boundp 'markdown-table-display--source-buffer)
+             (buffer-live-p markdown-table-display--source-buffer))
+        markdown-table-display--source-buffer
+      (current-buffer)))
+  (defun markdown-github-preview ()
+    "Preview the current Markdown file locally in GitHub-like WebKit.
+
+The preview is served by local `go-grip' and reloads when the file is saved.
+This also works from a `markdown-table-display-mode' buffer."
+    (interactive)
+    (let ((source (markdown-github-preview--source-buffer)))
+      (with-current-buffer source
+        (unless (derived-mode-p 'markdown-mode)
+          (user-error "This command is only available in Markdown buffers"))
+        (unless (and buffer-file-name (file-exists-p buffer-file-name))
+          (user-error "Save the Markdown buffer before opening its preview"))
+        (unless (bound-and-true-p grip-mode)
+          (grip-mode 1)))))
+  (defun markdown-github-preview-stop ()
+    "Stop the local GitHub-style preview for the current Markdown file."
+    (interactive)
+    (with-current-buffer (markdown-github-preview--source-buffer)
+      (if (bound-and-true-p grip-mode)
+          (grip-mode -1)
+        (message "No GitHub-style preview is running"))))
+  (with-eval-after-load 'markdown-mode
+    (define-key markdown-mode-command-map (kbd "g")
+                #'markdown-github-preview)
+    (define-key markdown-mode-command-map (kbd "G")
+                #'markdown-github-preview-stop))
+  :custom
+  (grip-command 'go-grip)
+  (grip-preview-host "127.0.0.1")
+  (grip-preview-in-webkit t)
+  ;; Let go-grip watch the saved Markdown file, avoiding temporary sidecars.
+  (grip-real-time-refresh nil))
+
 (use-package opencl-mode
   :mode "\\.cl\\'"
   )
