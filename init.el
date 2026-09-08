@@ -1166,6 +1166,107 @@ results."
              (buffer-live-p markdown-table-display--source-buffer))
         markdown-table-display--source-buffer
       (current-buffer)))
+  (defconst markdown-github-preview--autoscroll-script
+    "(function () {
+  if (window.__emacsMiddleAutoscroll === 5) return;
+  window.__emacsMiddleAutoscroll = 5;
+  var state = null, animationFrame = null, marker = null;
+  var suppressNextMouseDown = false;
+  function stop() {
+    state = null;
+    if (animationFrame) cancelAnimationFrame(animationFrame);
+    animationFrame = null;
+    if (marker) marker.remove();
+    marker = null;
+  }
+  function tick(timestamp) {
+    if (!state) return;
+    if (state.lastTimestamp) {
+      var elapsed = Math.min(timestamp - state.lastTimestamp, 100) / 1000;
+      window.scrollBy(state.vx * elapsed, state.targetVy * elapsed);
+    }
+    state.lastTimestamp = timestamp;
+    animationFrame = requestAnimationFrame(tick);
+  }
+  function addMarker(x, y) {
+    marker = document.createElement('div');
+    marker.style.cssText = 'position:fixed;z-index:2147483647;left:' +
+      (x - 11) + 'px;top:' + (y - 11) +
+      'px;width:20px;height:20px;border:2px solid #555;border-radius:50%;' +
+      'box-shadow:0 0 0 1px white;pointer-events:none';
+    document.body.appendChild(marker);
+  }
+  document.addEventListener('pointerdown', function (event) {
+    if (state) {
+      stop();
+      suppressNextMouseDown = true;
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
+    if (event.button !== 1) return;
+    event.preventDefault();
+    event.stopPropagation();
+    state = { x: event.clientX, y: event.clientY,
+              vx: 0, targetVy: 0, direction: 0, lastTimestamp: 0 };
+    addMarker(state.x, state.y);
+    tick();
+  }, true);
+  document.addEventListener('mousedown', function (event) {
+    if (suppressNextMouseDown) {
+      suppressNextMouseDown = false;
+      event.preventDefault();
+      event.stopPropagation();
+    } else if (event.button === 1) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+  }, true);
+  document.addEventListener('pointermove', function (event) {
+    if (!state) return;
+    var x = event.clientX - state.x, y = event.clientY - state.y;
+    state.vx = Math.abs(x) > 12
+      ? Math.sign(x) * Math.min(1400, (Math.abs(x) - 12) * 10) : 0;
+    var vy = Math.abs(y) > 12
+      ? Math.sign(y) * Math.min(1400, (Math.abs(y) - 12) * 10) : 0;
+    // Crossing the anchor ends vertical scrolling rather than reversing it.
+    // This makes a stop click reliable even when the pointer crosses center.
+    if (vy && state.direction && Math.sign(vy) !== state.direction) {
+      state.targetVy = 0;
+      return;
+    }
+    if (vy) state.direction = Math.sign(vy);
+    state.targetVy = vy;
+  }, true);
+  document.addEventListener('keydown', stop, true);
+  document.addEventListener('wheel', stop, true);
+  window.addEventListener('blur', stop);
+})()"
+    "JavaScript implementing middle-click autoscroll in a preview page.")
+  (defun markdown-github-preview--install-autoscroll (xwidget)
+    "Install middle-click autoscroll in XWIDGET's current document."
+    (when (xwidget-live-p xwidget)
+      (xwidget-webkit-execute-script
+       xwidget markdown-github-preview--autoscroll-script)))
+  (defun markdown-github-preview--webkit-callback (xwidget event)
+    "Preserve XWIDGET's callback and re-install autoscroll after page loads."
+    (when-let ((original (xwidget-get xwidget
+                                      'markdown-github-preview--callback)))
+      (funcall original xwidget event))
+    (when (and (eq event 'load-changed)
+               (equal (nth 3 last-input-event) "load-finished"))
+      (markdown-github-preview--install-autoscroll xwidget)))
+  (defun markdown-github-preview--enable-autoscroll ()
+    "Arrange for the current WebKit preview to support middle-click scrolling."
+    (require 'xwidget)
+    (when-let ((xwidget (xwidget-webkit-current-session)))
+      (unless (xwidget-get xwidget 'markdown-github-preview--callback)
+        (xwidget-put xwidget 'markdown-github-preview--callback
+                     (xwidget-get xwidget 'callback))
+        (xwidget-put xwidget 'callback
+                     #'markdown-github-preview--webkit-callback))
+      ;; The first page may already have completed loading before this runs.
+      (markdown-github-preview--install-autoscroll xwidget)))
   (defun markdown-github-preview ()
     "Preview the current Markdown file locally in GitHub-like WebKit.
 
@@ -1179,7 +1280,8 @@ This also works from a `markdown-table-display-mode' buffer."
         (unless (and buffer-file-name (file-exists-p buffer-file-name))
           (user-error "Save the Markdown buffer before opening its preview"))
         (unless (bound-and-true-p grip-mode)
-          (grip-mode 1)))))
+          (grip-mode 1))
+        (markdown-github-preview--enable-autoscroll))))
   (defun markdown-github-preview-stop ()
     "Stop the local GitHub-style preview for the current Markdown file."
     (interactive)
