@@ -1689,41 +1689,12 @@ This also works from a `markdown-table-display-mode' buffer."
         whisper-model "small"
         ;; whisper-language "en"
         whisper-language "es"
+        whisper-insert-text-at-point t
         ;; whisper-translate t
         ;; whisper-translate nil
         whisper-use-threads (/ (num-processors) 4))
 
-  (defun my/whisper-display-in-buffer (text)
-    "Display Whisper transcription in a dedicated buffer."
-    (let ((buf (get-buffer-create "*Whisper Transcription*")))
-      (with-current-buffer buf
-        (erase-buffer)
-        (insert text)
-        (view-mode 1))
-      (display-buffer buf)))
-
-  (defun my/whisper--run-and-display-in-buffer ()
-    "Helper to run whisper and display transcription in a dedicated buffer."
-    (let ((fn (lambda ()
-                (when-let (text (buffer-string))
-                  (my/whisper-display-in-buffer text)
-                  (remove-hook 'whisper-after-transcription-hook fn)))))
-      (add-hook 'whisper-after-transcription-hook fn)
-      (whisper-run)))
-
-  (defun my/whisper-transcribe ()
-    "Transcribe from microphone and display in buffer."
-    (interactive)
-    ;; Make the variable buffer-local so the async `whisper-run' process sees it
-    (setq-local whisper-translate nil)
-    (whisper-run))
-
-  (defun my/whisper-translate ()
-    "Translate from microphone and display in buffer."
-    (interactive)
-    ;; Make the variable buffer-local so the async `whisper-run' process sees it
-    (setq-local whisper-translate t)
-    (whisper-run))
+  (require 'whisper-target)
 
 )
 
