@@ -1151,6 +1151,7 @@ results."
 
 (use-package grip-mode
   :straight (:host github :repo "seagle0128/grip-mode")
+  :load-path "lisp"
   :commands (grip-mode)
   :init
   ;; `go-grip' is installed here rather than in the root-owned Go GOBIN
@@ -1256,10 +1257,10 @@ results."
     (when (and (eq event 'load-changed)
                (equal (nth 3 last-input-event) "load-finished"))
       (markdown-github-preview--install-autoscroll xwidget)))
-  (defun markdown-github-preview--enable-autoscroll ()
-    "Arrange for the current WebKit preview to support middle-click scrolling."
+  (defun markdown-github-preview--enable-autoscroll (&optional session)
+    "Enable middle-click scrolling for SESSION or the current WebKit preview."
     (require 'xwidget)
-    (when-let ((xwidget (xwidget-webkit-current-session)))
+    (when-let ((xwidget (or session (xwidget-webkit-current-session))))
       (unless (xwidget-get xwidget 'markdown-github-preview--callback)
         (xwidget-put xwidget 'markdown-github-preview--callback
                      (xwidget-get xwidget 'callback))
@@ -1279,9 +1280,8 @@ This also works from a `markdown-table-display-mode' buffer."
           (user-error "This command is only available in Markdown buffers"))
         (unless (and buffer-file-name (file-exists-p buffer-file-name))
           (user-error "Save the Markdown buffer before opening its preview"))
-        (unless (bound-and-true-p grip-mode)
-          (grip-mode 1))
-        (markdown-github-preview--enable-autoscroll))))
+        (require 'markdown-preview-session)
+        (markdown-preview-session-open))))
   (defun markdown-github-preview-stop ()
     "Stop the local GitHub-style preview for the current Markdown file."
     (interactive)
