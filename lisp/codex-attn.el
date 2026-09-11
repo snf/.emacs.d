@@ -44,7 +44,9 @@ Each entry is:
   :type 'number)
 
 (defcustom codex-attn-poll-interval 2.0
-  "Polling interval in seconds when filesystem watch is unavailable."
+  "Interval in seconds for periodic state reconciliation.
+File watches provide prompt updates; polling also recovers missed watch events
+and makes expired snoozes visible without requiring another completion."
   :type 'number)
 
 (defcustom codex-attn-refresh-delay 0.15
@@ -350,7 +352,10 @@ identifies the completed turn."
 
 (defun codex-attn--current-attn-buffer ()
   (let ((buf (window-buffer (selected-window))))
-    (when (codex-attn--buffer-provider buf)
+    ;; A selected window can remain selected while the user is in another app.
+    ;; Preserve the old behavior on terminals that report `unknown' focus.
+    (when (and (frame-focus-state (selected-frame))
+               (codex-attn--buffer-provider buf))
       buf)))
 
 (defun codex-attn--session-provider (session)
@@ -410,7 +415,12 @@ identifies the completed turn."
         (key (codex-attn--session-key session)))
     (when file
       (remhash file codex-attn--state-cache)
-      (when (and delete-file-p (file-exists-p file))
+      ;; A hook may have replaced this file since the cached event was shown.
+      ;; Acknowledging that event must not erase the newer completion.
+      (when (and delete-file-p (file-exists-p file)
+                 (or (null (plist-get session :file-signature))
+                     (equal (plist-get session :file-signature)
+                            (codex-attn--file-signature file))))
         (condition-case nil (delete-file file) (file-error nil))))
     (when key
       (remhash key codex-attn--snoozed-until))
@@ -515,6 +525,8 @@ identifies the completed turn."
                    (cached (gethash file codex-attn--state-cache)))
               (unless (equal signature (plist-get cached :signature))
                 (let ((session (codex-attn--read-session-file provider file)))
+                  (when session
+                    (setq session (plist-put session :file-signature signature)))
                   (puthash file (list :signature signature :session session)
                            codex-attn--state-cache))))))))
     (maphash
@@ -538,6 +550,10 @@ identifies the completed turn."
     (when (and (codex-attn--session-terminal-id session)
                (equal (codex-attn--session-emacs-instance-id session)
                       codex-attn--emacs-instance-id)
+               ;; A resumed thread can still carry the closed terminal's
+               ;; identity, retained by the shared server's notify hook.
+               (not (codex-attn--buffer-for-thread-id
+                     (codex-attn--session-thread-id session)))
                (not (codex-attn--buffer-for-terminal-id
                      (codex-attn--session-terminal-id session))))
       (codex-attn--forget-session session t))))
@@ -647,31 +663,23 @@ identifies the completed turn."
 (defun codex-attn--start-watch ()
   (codex-attn--ensure-dirs)
   (unless codex-attn--watches
-    (let ((need-poll nil))
-      (dolist (dir (codex-attn--state-dirs))
-        (condition-case err
-            (push (file-notify-add-watch
-                   dir
-                   '(change attribute-change)
-                   #'codex-attn--watch-callback)
-                  codex-attn--watches)
-          (file-notify-error
-           (setq need-poll t)
-           (message "codex-attn: file watch unavailable for %s (%s), using polling fallback."
-                    dir (error-message-string err)))
-          (error
-           (setq need-poll t)
-           (message "codex-attn: failed to watch %s (%s), using polling fallback."
-                    dir (error-message-string err)))))
-      (setq codex-attn--watches (nreverse codex-attn--watches))
-      (when (or need-poll (null codex-attn--watches))
-        (unless codex-attn--poll-timer
-          (setq codex-attn--poll-timer
-                (run-with-timer 0 codex-attn-poll-interval
-                                #'codex-attn--schedule-refresh))))
-      (when (and (not need-poll) codex-attn--watches codex-attn--poll-timer)
-        (cancel-timer codex-attn--poll-timer)
-        (setq codex-attn--poll-timer nil))))
+    (dolist (dir (codex-attn--state-dirs))
+      (condition-case err
+          (push (file-notify-add-watch
+                 dir
+                 '(change attribute-change)
+                 #'codex-attn--watch-callback)
+                codex-attn--watches)
+        (error
+         (message "codex-attn: failed to watch %s (%s), using polling fallback."
+                  dir (error-message-string err)))))
+    (setq codex-attn--watches (nreverse codex-attn--watches)))
+  ;; Watches can stop after startup or lose events.  Keep reconciliation
+  ;; active even when watch registration succeeded; unchanged JSON is cached.
+  (unless codex-attn--poll-timer
+    (setq codex-attn--poll-timer
+          (run-with-timer codex-attn-poll-interval codex-attn-poll-interval
+                          #'codex-attn--schedule-refresh)))
   (codex-attn--refresh))
 
 (defun codex-attn--stop-watch ()

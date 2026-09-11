@@ -32,6 +32,10 @@ def _thread_id_from_result(message: dict[str, Any]) -> str | None:
     thread = result.get("thread")
     if not isinstance(thread, dict):
         return None
+    # The TUI opens an ephemeral thread to generate a conversation title.
+    # It is an auxiliary request, not a change of the displayed conversation.
+    if thread.get("ephemeral") is True:
+        return None
     thread_id = thread.get("id")
     return thread_id if isinstance(thread_id, str) else None
 
@@ -95,6 +99,7 @@ async def _run_proxy(endpoint: str, host: str) -> None:
                             if isinstance(request_id, (str, int)) and method in {
                                 "thread/start",
                                 "thread/resume",
+                                "thread/fork",
                                 "turn/start",
                             }:
                                 params = message.get("params")
@@ -121,7 +126,7 @@ async def _run_proxy(endpoint: str, host: str) -> None:
                             )
                             if context is not None:
                                 method, request_thread_id = context
-                                if method in {"thread/start", "thread/resume"}:
+                                if method in {"thread/start", "thread/resume", "thread/fork"}:
                                     # A shared app-server can deliver lifecycle
                                     # notifications for other threads.  Only a
                                     # response to this TUI's own selection request
@@ -140,9 +145,9 @@ async def _run_proxy(endpoint: str, host: str) -> None:
                                     else None
                                 )
                                 thread_id = thread_id or _thread_id_from_notification(message)
-                                # Only report completion for a turn this TUI
-                                # started.  Shared servers broadcast unrelated
-                                # thread notifications to every client.
+                                # Report only the displayed durable thread.
+                                # This excludes title-generation turns and
+                                # unrelated shared-server notifications.
                                 if thread_id and thread_id == reported_thread:
                                     _emit(
                                         "attention",
@@ -169,16 +174,46 @@ async def _run_proxy(endpoint: str, host: str) -> None:
     async with serve(handler, host, 0, compression=None, max_size=None) as server:
         socket = server.sockets[0]
         port = socket.getsockname()[1]
-        _emit("ready", endpoint=f"ws://{host}:{port}")
+        _emit("ready", endpoint=f"ws://{host}:{port}", filters_ephemeral=True)
         await asyncio.Future()
+
+
+async def _thread_is_durable(endpoint: str, thread_id: str) -> bool:
+    """Validate bindings from older proxies without restarting their sockets."""
+    async with connect(endpoint, compression=None, max_size=None) as websocket:
+        async def request(request_id: int, method: str, params: dict) -> dict:
+            await websocket.send(json.dumps(dict(id=request_id, method=method, params=params)))
+            async for raw in websocket:
+                message = _parse_message(raw)
+                if message and message.get("id") == request_id:
+                    return message
+            return {}
+
+        initialized = await request(1, "initialize", {
+            "clientInfo": {"name": "codex-attn", "version": "1"},
+            "capabilities": {"experimentalApi": True},
+        })
+        if "result" not in initialized:
+            return False
+        await websocket.send(json.dumps({"method": "initialized", "params": {}}))
+        response = await request(2, "thread/read", {
+            "threadId": thread_id, "includeTurns": False,
+        })
+        return _thread_id_from_result(response) == thread_id
 
 
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--endpoint", required=True)
     parser.add_argument("--host", default="127.0.0.1")
+    parser.add_argument("--check-thread")
     args = parser.parse_args()
     try:
+        if args.check_thread:
+            durable = asyncio.run(asyncio.wait_for(
+                _thread_is_durable(args.endpoint, args.check_thread), 10
+            ))
+            return 0 if durable else 1
         asyncio.run(_run_proxy(args.endpoint, args.host))
     except KeyboardInterrupt:
         return 130

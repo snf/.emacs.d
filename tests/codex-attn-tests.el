@@ -361,6 +361,106 @@ the new buffer, using `ghostel-mode' unless MODE is supplied."
         (with-current-buffer buf
           (remove-hook 'kill-buffer-query-functions reject t))))))
 
+(ert-deftest codex-attn-resumed-thread-survives-old-terminal-identity ()
+  (codex-attn-test--with-state
+    (codex-attn-test--with-buffers
+        ((buf "*codex: resumed*" "/tmp/"))
+      (codex-attn-bind-buffer-thread buf "thread-resumed")
+      (let ((file (codex-attn-test--write-state
+                   codex-attn-state-dir "thread-resumed"
+                   :emacs_instance_id "test-emacs"
+                   :terminal_id "closed-terminal")))
+        (codex-attn--refresh)
+        (should (file-exists-p file))
+        (should (codex-attn-buffer-needs-attention-p buf))))))
+
+(ert-deftest codex-attn-unfocused-selected-buffer-keeps-attention ()
+  (codex-attn-test--with-state
+    (codex-attn-test--with-buffers
+        ((buf "*codex: unfocused*" "/tmp/"))
+      (save-window-excursion
+        (switch-to-buffer buf)
+        (let ((file (codex-attn-test--write-state
+                     codex-attn-state-dir "thread-unfocused"
+                     :emacs_instance_id "test-emacs"
+                     :terminal_id (buffer-local-value 'codex-attn-terminal-id buf))))
+          (cl-letf (((symbol-function 'frame-focus-state) (lambda (&optional _) nil)))
+            (codex-attn--refresh)
+            (should (file-exists-p file))
+            (should (codex-attn-buffer-needs-attention-p buf)))
+          (cl-letf (((symbol-function 'frame-focus-state) (lambda (&optional _) t)))
+            (codex-attn--on-buffer-visibility-change)
+            (codex-attn--refresh)
+            (should-not (file-exists-p file))
+            (should-not (codex-attn-buffer-needs-attention-p buf))))))))
+
+(ert-deftest codex-attn-ack-old-event-preserves-new-completion ()
+  (codex-attn-test--with-state
+    (codex-attn-test--with-buffers
+        ((buf "*codex: racing*" "/tmp/"))
+      (codex-attn-bind-buffer-thread buf "thread-racing")
+      (let ((file (codex-attn-test--write-state
+                   codex-attn-state-dir "thread-racing" :turn_id "old")))
+        (codex-attn--refresh)
+        (let ((old (car codex-attn--pending-sessions)))
+          (codex-attn-test--write-state
+           codex-attn-state-dir "thread-racing" :turn_id "new-completion")
+          (codex-attn--ack-session old)
+          (should (file-exists-p file))
+          (codex-attn--refresh)
+          (should (equal "new-completion"
+                         (plist-get (car codex-attn--pending-sessions) :turn_id))))))))
+
+(ert-deftest codex-attn-watch-success-retains-reconciliation-poll ()
+  (codex-attn-test--with-state
+    (let ((codex-attn--watches nil)
+          (codex-attn--poll-timer nil)
+          (codex-attn--refresh-timer nil))
+      (unwind-protect
+          (cl-letf (((symbol-function 'file-notify-add-watch)
+                     (lambda (&rest _) 'test-watch))
+                    ((symbol-function 'file-notify-rm-watch) #'ignore))
+            (codex-attn--start-watch)
+            (should (= 3 (length codex-attn--watches)))
+            (should (timerp codex-attn--poll-timer)))
+        (codex-attn--stop-watch)))))
+
+(ert-deftest codex-attn-poll-recovers-lost-watch-and-expired-snooze ()
+  (codex-attn-test--with-state
+    (codex-attn-test--with-buffers
+        ((buf "*codex: polling*" "/tmp/"))
+      (let ((codex-attn-mode t)
+            (codex-attn-poll-interval 0.05)
+            (codex-attn-refresh-delay 0.01)
+            (codex-attn--watches nil)
+            (codex-attn--poll-timer nil)
+            (codex-attn--refresh-timer nil)
+            (codex-attn--blink-timer nil))
+        (unwind-protect
+            (progn
+              (codex-attn-bind-buffer-thread buf "thread-polling")
+              (codex-attn--start-watch)
+              ;; Simulate watches stopping after successful registration.
+              (mapc #'file-notify-rm-watch codex-attn--watches)
+              (let ((file (codex-attn-test--write-state
+                           codex-attn-state-dir "thread-polling")))
+                (let ((deadline (+ (float-time) 3)))
+                  (while (and (not (codex-attn-buffer-needs-attention-p buf))
+                              (< (float-time) deadline))
+                    (accept-process-output nil 0.02)))
+                (should (codex-attn-buffer-needs-attention-p buf))
+                (puthash file (+ (float-time) 0.1) codex-attn--snoozed-until)
+                (codex-attn--refresh)
+                (should-not (codex-attn-buffer-needs-attention-p buf))
+                ;; No new filesystem event should be needed to wake a snooze.
+                (let ((deadline (+ (float-time) 3)))
+                  (while (and (not (codex-attn-buffer-needs-attention-p buf))
+                              (< (float-time) deadline))
+                    (accept-process-output nil 0.02)))
+                (should (codex-attn-buffer-needs-attention-p buf))))
+          (codex-attn--stop-watch)
+          (codex-attn--stop-blink))))))
+
 (provide 'codex-attn-tests)
 
 ;;; codex-attn-tests.el ends here

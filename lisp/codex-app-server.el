@@ -220,16 +220,49 @@ This function is suitable for `emacs-startup-hook'."
                            #'codex-app-server--display-startup-error
                            t))
 
-(defun codex-app-server--proxy-emit-thread (process thread-id)
+(defun codex-app-server--check-thread (thread-id callback)
+  "Asynchronously call CALLBACK with whether THREAD-ID is durable.
+This read-only check also protects proxies started before ephemeral filtering
+was added, without restarting their live TUI connections."
+  (make-process
+   :name "codex-thread-check"
+   :command (append codex-app-server-python-command
+                    (list codex-app-server-proxy-script
+                          "--endpoint" codex-app-server-endpoint
+                          "--check-thread" thread-id))
+   :connection-type 'pipe :noquery t
+   :filter #'ignore
+   :sentinel (lambda (check _event)
+               (when (memq (process-status check) '(exit signal))
+                 (funcall callback (and (eq (process-status check) 'exit)
+                                        (zerop (process-exit-status check))))))))
+
+(defun codex-app-server--proxy-bind-thread (process thread-id)
   (unless (equal thread-id (process-get process 'codex-thread-id))
     (process-put process 'codex-thread-id thread-id)
     (when-let ((callback (process-get process 'codex-thread-callback)))
       (funcall callback thread-id))))
 
+(defun codex-app-server--proxy-emit-thread (process thread-id)
+  (if (process-get process 'codex-filters-ephemeral)
+      (codex-app-server--proxy-bind-thread process thread-id)
+    ;; Old Python proxies also report the temporary title-generation thread.
+    ;; Keep the displayed thread until this candidate has been verified.
+    (let ((sequence (1+ (or (process-get process 'codex-binding-sequence) 0))))
+      (process-put process 'codex-binding-sequence sequence)
+      (codex-app-server--check-thread
+       thread-id
+       (lambda (durable)
+         (when (and durable (process-live-p process)
+                    (> sequence (or (process-get process 'codex-bound-sequence) 0)))
+           (process-put process 'codex-bound-sequence sequence)
+           (codex-app-server--proxy-bind-thread process thread-id)))))))
+
 (defun codex-app-server--proxy-emit-attention (process thread-id turn-id)
   "Report a completed TURN-ID for this proxy's THREAD-ID."
-  (when-let ((callback (process-get process 'codex-attention-callback)))
-    (funcall callback thread-id turn-id)))
+  (when (equal thread-id (process-get process 'codex-thread-id))
+    (when-let ((callback (process-get process 'codex-attention-callback)))
+      (funcall callback thread-id turn-id))))
 
 (defun codex-app-server--proxy-handle-line (process line)
   (condition-case nil
@@ -238,6 +271,8 @@ This function is suitable for `emacs-startup-hook'."
              (message (json-read-from-string line)))
         (pcase (plist-get message :type)
           ("ready"
+           (process-put process 'codex-filters-ephemeral
+                        (eq t (plist-get message :filters_ephemeral)))
            (process-put process 'codex-proxy-endpoint
                         (plist-get message :endpoint))
            (when-let ((callback (process-get process 'codex-ready-callback)))

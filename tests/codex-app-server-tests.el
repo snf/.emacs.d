@@ -94,7 +94,7 @@
           (process-put process 'codex-thread-callback
                        (lambda (thread-id) (setq thread thread-id)))
           (codex-app-server--proxy-handle-line
-           process "{\"type\":\"ready\",\"endpoint\":\"ws://127.0.0.1:1\"}")
+           process "{\"type\":\"ready\",\"endpoint\":\"ws://127.0.0.1:1\",\"filters_ephemeral\":true}")
           (codex-app-server--proxy-handle-line
            process "{\"type\":\"thread\",\"thread_id\":\"thread-1\"}")
           (process-put process 'codex-attention-callback
@@ -107,6 +107,33 @@
           (should (equal attention '("thread-1" "turn-1"))))
       (when (process-live-p process)
         (delete-process process)))))
+
+(ert-deftest codex-app-server-legacy-proxy-ignores-title-thread-and-attention ()
+  (let ((process (start-process "codex-legacy-proxy-test" nil "cat"))
+        checks thread attention)
+    (unwind-protect
+        (cl-letf (((symbol-function 'codex-app-server--check-thread)
+                   (lambda (id callback) (push (cons id callback) checks))))
+          (process-put process 'codex-thread-callback (lambda (id) (setq thread id)))
+          (process-put process 'codex-attention-callback
+                       (lambda (id turn) (setq attention (list id turn))))
+          (codex-app-server--proxy-emit-thread process "main")
+          (codex-app-server--proxy-emit-thread process "title")
+          ;; A title check can finish before the real conversation's check.
+          (funcall (cdr (assoc "title" checks)) nil)
+          (funcall (cdr (assoc "main" checks)) t)
+          (should (equal thread "main"))
+          (codex-app-server--proxy-emit-attention process "title" "title-turn")
+          (should-not attention)
+          (codex-app-server--proxy-emit-attention process "main" "main-turn")
+          (should (equal attention '("main" "main-turn")))
+          ;; An older durable check must not undo a newer selection.
+          (codex-app-server--proxy-emit-thread process "older")
+          (codex-app-server--proxy-emit-thread process "newer")
+          (funcall (cdr (assoc "newer" checks)) t)
+          (funcall (cdr (assoc "older" checks)) t)
+          (should (equal thread "newer")))
+      (when (process-live-p process) (delete-process process)))))
 
 (ert-deftest codex-app-server-builds-new-and-resume-tui-commands ()
   (let ((codex-app-server-codex-program "/tmp/Codex CLI"))
