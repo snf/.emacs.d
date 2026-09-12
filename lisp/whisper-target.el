@@ -10,11 +10,119 @@
 
 (require 'whisper)
 
+(declare-function codex-voice-cancel-dictation "codex-voice" ())
+
 (defvar my/whisper--target-buffer nil
   "Buffer selected when the current Whisper recording began.")
 
 (defvar my/whisper--write-failure-tag nil
   "Dynamically bound tag used to leave a failed Whisper insertion.")
+
+(defcustom my/whisper-long-recording-delay 300
+  "Seconds to wait before showing the long-recording indicator."
+  :type 'number
+  :group 'whisper)
+
+(defcustom my/whisper-long-recording-blink-interval 0.7
+  "Seconds between visibility changes of the long-recording indicator."
+  :type 'number
+  :group 'whisper)
+
+(defvar my/whisper--long-recording-timer nil
+  "Timer that enables the long-recording indicator.")
+
+(defvar my/whisper--long-recording-blink-timer nil
+  "Timer that blinks the long-recording indicator.")
+
+(defvar my/whisper--long-recording-active nil
+  "Non-nil while the recording has passed the long-recording threshold.")
+
+(defvar my/whisper--long-recording-visible nil
+  "Non-nil when the long-recording indicator is currently visible.")
+
+(defconst my/whisper--long-recording-mode-line-entry
+  '(:eval (my/whisper--long-recording-mode-line))
+  "The long-recording entry installed in `global-mode-string'.")
+
+(defun my/whisper--long-recording-mode-line ()
+  "Return the long-recording status text when it should be displayed."
+  (when (and my/whisper--long-recording-active
+             my/whisper--long-recording-visible)
+    (propertize " ● REC 5m"
+                'face '(:inherit font-lock-warning-face :height 1.15))))
+
+(defun my/whisper--ensure-long-recording-mode-line-entry ()
+  "Install the long-recording status entry once."
+  (unless (member my/whisper--long-recording-mode-line-entry global-mode-string)
+    (setq global-mode-string
+          (append global-mode-string
+                  (list my/whisper--long-recording-mode-line-entry)))))
+
+(defun my/whisper--cancel-long-recording-timers ()
+  "Cancel the timers that maintain the long-recording indicator."
+  (dolist (timer (list my/whisper--long-recording-timer
+                       my/whisper--long-recording-blink-timer))
+    (when (timerp timer)
+      (cancel-timer timer)))
+  (setq my/whisper--long-recording-timer nil
+        my/whisper--long-recording-blink-timer nil))
+
+(defun my/whisper--clear-long-recording-status ()
+  "Hide the long-recording indicator and stop its timers."
+  (my/whisper--cancel-long-recording-timers)
+  (setq my/whisper--long-recording-active nil
+        my/whisper--long-recording-visible nil)
+  (force-mode-line-update t))
+
+(defun my/whisper--blink-long-recording-status ()
+  "Toggle visibility of the long-recording indicator."
+  (setq my/whisper--long-recording-visible
+        (not my/whisper--long-recording-visible))
+  (force-mode-line-update t))
+
+(defun my/whisper--show-long-recording-status ()
+  "Start blinking the five-minute recording status indicator."
+  (setq my/whisper--long-recording-timer nil
+        my/whisper--long-recording-active t
+        my/whisper--long-recording-visible t)
+  (setq my/whisper--long-recording-blink-timer
+        (run-at-time my/whisper-long-recording-blink-interval
+                     my/whisper-long-recording-blink-interval
+                     #'my/whisper--blink-long-recording-status))
+  (force-mode-line-update t))
+
+(defun my/whisper--recording-elapsed-seconds ()
+  "Return elapsed seconds for the current local recording process, if known."
+  (when (and (processp whisper--recording-process)
+             (process-live-p whisper--recording-process))
+    (condition-case nil
+        (when-let* ((attributes
+                     (process-attributes (process-id whisper--recording-process)))
+                    (elapsed (alist-get 'etime attributes)))
+          (float-time elapsed))
+      (error nil))))
+
+(defun my/whisper--start-long-recording-timer ()
+  "Schedule the five-minute status indicator for the active recording."
+  (my/whisper--clear-long-recording-status)
+  (let ((remaining
+         (max 0 (- my/whisper-long-recording-delay
+                   (or (my/whisper--recording-elapsed-seconds) 0)))))
+    (if (zerop remaining)
+        (my/whisper--show-long-recording-status)
+      (setq my/whisper--long-recording-timer
+            (run-at-time remaining nil
+                         #'my/whisper--show-long-recording-status)))))
+
+(defun my/whisper--watch-recording-start (&rest _)
+  "Schedule long-recording status after Whisper has started recording."
+  (when (whisper-recording-p)
+    (my/whisper--start-long-recording-timer)))
+
+(defun my/whisper--watch-recording-mode-line (command phase)
+  "Clear long-recording status when Whisper hides its recording indicator."
+  (when (and (eq command :hide) (eq phase 'recording))
+    (my/whisper--clear-long-recording-status)))
 
 (defun my/whisper--target-writable-p ()
   "Return non-nil when the saved Whisper target can receive text."
@@ -79,6 +187,38 @@
 (advice-add 'whisper--handle-transcription-output :around
             #'my/whisper--handle-output-in-target)
 (advice-add 'whisper--cleanup-transcription :after #'my/whisper--clear-target)
+(advice-add 'whisper--record-audio :after #'my/whisper--watch-recording-start)
+(advice-add 'whisper--setup-mode-line :after #'my/whisper--watch-recording-mode-line)
+
+(my/whisper--ensure-long-recording-mode-line-entry)
+
+;; When this file is reloaded during an existing recording, preserve the
+;; original five-minute threshold instead of starting a fresh five-minute wait.
+(when (whisper-recording-p)
+  (my/whisper--start-long-recording-timer))
+
+(defun my/whisper-cancel-recording ()
+  "Cancel the current Whisper recording without transcribing partial audio.
+
+When the recording belongs to `codex-voice', cancel its capture as well so
+that no partial follow-up is sent to Codex."
+  (interactive)
+  (cond
+   ((and (boundp 'codex-voice--capture)
+         codex-voice--capture
+         (whisper-recording-p)
+         (fboundp 'codex-voice-cancel-dictation))
+    (codex-voice-cancel-dictation))
+   ((whisper-recording-p)
+    ;; `interrupt-process' is Whisper's normal stop-and-transcribe action.
+    ;; Deleting the FFmpeg process instead leaves its sentinel without a
+    ;; completed recording event, so no partial audio is transcribed.
+    (delete-process whisper--recording-process)
+    (my/whisper--clear-target)
+    (my/whisper--clear-long-recording-status)
+    (message "Whisper recording cancelled"))
+   (t
+    (user-error "No Whisper recording is active"))))
 
 (defun my/whisper--start-or-stop (translate)
   "Start a Whisper recording in the current buffer, or stop the active one.

@@ -63,9 +63,11 @@ A prefix argument to `codex-voice-dictate-followup' reverses this for one
 dictation, leaving the polished text in the Codex composer for review."
   :type 'boolean)
 
-(defcustom codex-voice-capture-timeout 600
-  "Seconds after which an unfinished dictated capture releases its state."
-  :type 'number)
+(defcustom codex-voice-capture-timeout nil
+  "Seconds after which an unfinished dictated capture releases its state.
+
+When nil, a dictated capture has no automatic cutoff."
+  :type '(choice number (const nil)))
 
 (defcustom codex-voice-context-dir
   (expand-file-name "codex/contexts"
@@ -307,6 +309,16 @@ When EXPECTED is non-nil, only release it if it is still the active capture."
       (when (fboundp 'whisper--setup-mode-line)
         (whisper--setup-mode-line :hide 'recording)))))
 
+;;;###autoload
+(defun codex-voice-cancel-dictation ()
+  "Cancel the current Codex voice recording without transcribing it."
+  (interactive)
+  (if (and codex-voice--capture (whisper-recording-p))
+      (progn
+        (codex-voice--cancel-capture)
+        (message "Codex voice recording cancelled"))
+    (user-error "No Codex voice recording is active")))
+
 (defun codex-voice--capture-expired (capture)
   "Release unfinished CAPTURE after its timeout."
   (when (eq capture codex-voice--capture)
@@ -342,9 +354,10 @@ When EXPECTED is non-nil, only release it if it is still the active capture."
   "Install an exclusive microphone capture for TARGET."
   (let ((capture (list :target target :context context :submit submit
                        :timer nil :process nil)))
-    (setf (plist-get capture :timer)
-          (run-at-time (max 1 codex-voice-capture-timeout) nil
-                       #'codex-voice--capture-expired capture))
+    (when codex-voice-capture-timeout
+      (setf (plist-get capture :timer)
+            (run-at-time (max 1 codex-voice-capture-timeout) nil
+                         #'codex-voice--capture-expired capture)))
     (setq codex-voice--capture capture)
     (with-current-buffer target
       (add-hook 'kill-buffer-hook #'codex-voice--capture-target-killed nil t))

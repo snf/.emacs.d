@@ -96,4 +96,54 @@
       (dolist (buffer (list source stop-buffer stdout))
         (when (buffer-live-p buffer) (kill-buffer buffer))))))
 
+(ert-deftest whisper-target-long-recording-status-starts-after-threshold ()
+  "The five-minute status starts hidden, then blinks until cleared."
+  (let ((my/whisper-long-recording-delay 300)
+        (my/whisper-long-recording-blink-interval 60))
+    (unwind-protect
+        (progn
+          (my/whisper--start-long-recording-timer)
+          (should (timerp my/whisper--long-recording-timer))
+          (should-not my/whisper--long-recording-active)
+          ;; Invoke the timer callback directly instead of waiting five minutes.
+          (cancel-timer my/whisper--long-recording-timer)
+          (my/whisper--show-long-recording-status)
+          (should my/whisper--long-recording-active)
+          (should (string-match-p "REC 5m"
+                                  (my/whisper--long-recording-mode-line)))
+          (my/whisper--blink-long-recording-status)
+          (should-not (my/whisper--long-recording-mode-line)))
+      (my/whisper--clear-long-recording-status))))
+
+(ert-deftest whisper-target-recording-hooks-manage-long-status ()
+  "Whisper's recording lifecycle starts and clears the five-minute status."
+  (let (timer-started)
+    (cl-letf (((symbol-function 'whisper-recording-p) (lambda () t))
+              ((symbol-function 'my/whisper--start-long-recording-timer)
+               (lambda () (setq timer-started t))))
+      (my/whisper--watch-recording-start)
+      (should timer-started))
+    (unwind-protect
+        (progn
+          (my/whisper--show-long-recording-status)
+          (my/whisper--watch-recording-mode-line :hide 'recording)
+          (should-not my/whisper--long-recording-active))
+      (my/whisper--clear-long-recording-status))))
+
+(ert-deftest whisper-target-cancel-recording-does-not-transcribe ()
+  "Cancellation deletes the recording process instead of interrupting it."
+  (let ((target (generate-new-buffer " *whisper cancel*"))
+        (whisper--recording-process 'recording-process)
+        deleted)
+    (unwind-protect
+        (let ((my/whisper--target-buffer target))
+          (cl-letf (((symbol-function 'whisper-recording-p) (lambda () t))
+                    ((symbol-function 'delete-process)
+                     (lambda (process) (setq deleted process))))
+            (my/whisper-cancel-recording)
+            (should (eq deleted 'recording-process))
+            (should-not my/whisper--target-buffer)))
+      (when (buffer-live-p target)
+        (kill-buffer target)))))
+
 ;;; whisper-target-tests.el ends here

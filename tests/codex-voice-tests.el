@@ -154,6 +154,30 @@
             (should-not codex-voice--capture))
         (codex-voice--clear-capture)))))
 
+(ert-deftest codex-voice-allows-an-unlimited-capture ()
+  "A nil capture timeout does not schedule an automatic cancellation."
+  (codex-voice-test--with-target
+    (let ((codex-voice--capture nil)
+          (codex-voice-capture-timeout nil))
+      (unwind-protect
+          (let ((capture
+                 (codex-voice--install-capture
+                  (current-buffer)
+                  (codex-voice--read-context (current-buffer))
+                  t)))
+            (should-not (plist-get capture :timer)))
+        (codex-voice--clear-capture)))))
+
+(ert-deftest codex-voice-cancel-command-cancels-active-capture ()
+  "The public cancellation command delegates to capture cleanup."
+  (let ((codex-voice--capture 'active-capture)
+        cancelled)
+    (cl-letf (((symbol-function 'whisper-recording-p) (lambda () t))
+              ((symbol-function 'codex-voice--cancel-capture)
+               (lambda (&rest _) (setq cancelled t))))
+      (codex-voice-cancel-dictation)
+      (should cancelled))))
+
 (ert-deftest codex-voice-target-kill-releases-capture ()
   (codex-voice-test--with-target
     (let ((codex-voice--capture nil)

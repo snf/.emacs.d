@@ -1791,6 +1791,7 @@ This also works from a `markdown-table-display-mode' buffer."
         whisper-model "small"
         ;; whisper-language "en"
         whisper-language "es"
+        whisper-recording-timeout nil
         whisper-insert-text-at-point t
         ;; whisper-translate t
         ;; whisper-translate nil
