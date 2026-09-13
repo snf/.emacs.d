@@ -226,5 +226,37 @@
       (when (file-exists-p file)
         (delete-file file)))))
 
+(ert-deftest markdown-table-display-source-revert-keeps-source-visible ()
+  ;; Even an old/custom auto-enable hook must not switch views during revert.
+  (let ((file (make-temp-file "markdown-table-revert-" nil ".md"))
+        (markdown-mode-hook '(markdown-table-display--maybe-enable))
+        source view)
+    (unwind-protect
+        (save-window-excursion
+          (write-region "| A | B |\n|---|---|\n| Before | text |\n"
+                        nil file nil 'silent)
+          (setq source (find-file-noselect file))
+          (with-current-buffer source
+            (setq view markdown-table-display--view-buffer))
+          (switch-to-buffer source)
+          (write-region "| A | B |\n|---|---|\n| After | updated |\n"
+                        nil file nil 'silent)
+          (revert-buffer t t)
+          (should (eq source (window-buffer)))
+          (with-current-buffer source
+            (should (eq major-mode 'markdown-mode))
+            (should-not buffer-read-only)
+            (should (string-match-p "After" (buffer-string)))
+            (should-not markdown-table-display-mode)
+            ;; Manual activation remains available after reverting.
+            (markdown-table-display-toggle)
+            (setq view markdown-table-display--view-buffer))
+          (should (eq view (window-buffer)))
+          (with-current-buffer view
+            (should (string-match-p "updated" (buffer-string)))))
+      (when (buffer-live-p source) (kill-buffer source))
+      (when (buffer-live-p view) (kill-buffer view))
+      (delete-file file))))
+
 (provide 'markdown-table-display-tests)
 ;;; markdown-table-display-tests.el ends here

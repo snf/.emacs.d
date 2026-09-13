@@ -656,8 +656,10 @@ them."
     (setq markdown-table-display--last-width nil)))
 
 (defun markdown-table-display--maybe-enable ()
-  "Enable table view unless this is the generated view buffer."
+  "Enable table view outside reverts and generated view buffers.
+This optional hook is not installed by default."
   (unless (or markdown-table-display--inhibit-auto-enable
+              revert-buffer-in-progress
               (derived-mode-p 'markdown-table-display-view-mode))
     (markdown-table-display-mode 1)))
 

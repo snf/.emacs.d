@@ -1161,7 +1161,9 @@ Buffers without a file, or narrowed buffers, use a temporary HTML file."
   :after (markdown-mode markdown-table-wrap)
   :commands (markdown-table-display-mode markdown-table-display-refresh
              markdown-table-display-toggle)
-  :hook (markdown-mode . markdown-table-display--maybe-enable)
+  :init
+  ;; Table views are opt-in.  Also remove the old hook when reloading init.
+  (remove-hook 'markdown-mode-hook #'markdown-table-display--maybe-enable)
   :bind (:map markdown-mode-map
               ("C-c |" . markdown-table-display-toggle)))
 
