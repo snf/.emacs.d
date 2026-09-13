@@ -1119,6 +1119,22 @@ results."
   :ensure nil
   :if (featurep 'xwidget-internal)
   :init
+  (defun my/xwidget-webkit-open-buffer ()
+    "Open the current buffer in a new WebKit view.
+Save modified file buffers first so relative links and assets work.
+Buffers without a file, or narrowed buffers, use a temporary HTML file."
+    (interactive)
+    (unless (and (display-graphic-p) (featurep 'xwidget-internal))
+      (user-error "WebKit preview requires a graphical Emacs with xwidgets"))
+    (require 'browse-url)
+    (require 'xwidget)
+    (let ((browse-url-browser-function #'xwidget-webkit-browse-url)
+          (browse-url-handlers nil)
+          (browse-url-default-handlers nil)
+          (browse-url-new-window-flag t)
+          (browse-url-save-file t))
+      (browse-url-of-buffer)))
+
   (defun my/xwidget-webkit-disable-kill-query ()
     "Do not ask for confirmation when killing a WebKit buffer."
     (setq-local kill-buffer-query-functions
