@@ -607,6 +607,20 @@
   :custom
   (ghostel-shell "/bin/bash")
   :config
+  (defun my/ghostel-browse-url-in-webkit (url &optional _new-window)
+    "Open URL in a new WebKit buffer in the selected Emacs window."
+    (unless (and (display-graphic-p) (featurep 'xwidget-internal))
+      (user-error "WebKit links require a graphical Emacs with xwidgets"))
+    (require 'xwidget)
+    (xwidget-webkit-browse-url url t))
+
+  (defun my/ghostel-use-webkit-browser ()
+    "Use WebKit for web links opened from this Ghostel buffer."
+    (setq-local browse-url-browser-function
+                #'my/ghostel-browse-url-in-webkit))
+
+  (add-hook 'ghostel-mode-hook #'my/ghostel-use-webkit-browser)
+
   (defun run-command-in-ghostel-project (command &optional buffer-label directory)
     "Open Ghostel in the project root and execute COMMAND.
 
