@@ -1918,10 +1918,10 @@ This also works from a `markdown-table-display-mode' buffer."
   )
 
 ;; notifications
-(use-package alert
-  :config
-  (run-with-timer 0 (* 30 60) #'alert "30 minutes have passed!" :style 'fringe)
-  )
+;; (use-package alert
+;;   :config
+;;   (run-with-timer 0 (* 30 60) #'alert "30 minutes have passed!" :style 'fringe)
+;;   )
 ;; ui
 (use-package dired-subtree
   :straight (dired-subtree
