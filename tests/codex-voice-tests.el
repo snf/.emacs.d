@@ -94,7 +94,7 @@
 
 (ert-deftest codex-voice-uses-luna-with-max-reasoning ()
   (let ((command (codex-voice--formatter-command)))
-    (should (member "gpt-5.6-luna" command))
+    (should (member "gpt-6-luna" command))
     (should (member "model_reasoning_effort=\"max\"" command))))
 
 (ert-deftest codex-voice-delivers-with-bracketed-paste-and-return ()

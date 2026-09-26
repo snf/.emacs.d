@@ -36,7 +36,7 @@
   "Codex executable used to polish dictated follow-ups."
   :type 'string)
 
-(defcustom codex-voice-model "gpt-5.6-luna"
+(defcustom codex-voice-model "gpt-6-luna"
   "Codex model used to translate and organize dictated follow-ups."
   :type 'string)
 
