@@ -1137,6 +1137,21 @@ results."
   :ensure nil
   :if (featurep 'xwidget-internal)
   :init
+  ;; These keys must take precedence over minor-mode C-c prefix maps.
+  (defvar-local my/xwidget-webkit-copy-keys nil)
+  (defvar my/xwidget-webkit-copy-keys-map
+    (let ((map (make-sparse-keymap)))
+      (define-key map (kbd "C-c") #'xwidget-webkit-copy-selection-as-kill)
+      (define-key map (kbd "M-w") #'xwidget-webkit-copy-selection-as-kill)
+      map))
+  (defvar my/xwidget-webkit-copy-keys-alist
+    `((my/xwidget-webkit-copy-keys . ,my/xwidget-webkit-copy-keys-map)))
+  (add-to-list 'emulation-mode-map-alists 'my/xwidget-webkit-copy-keys-alist)
+
+  (defun my/xwidget-webkit-enable-copy-keys ()
+    "Use WebKit's selection for copy keys in this buffer."
+    (setq-local my/xwidget-webkit-copy-keys t))
+
   (defun my/xwidget-webkit-open-buffer ()
     "Open the current buffer in a new WebKit view.
 Save modified file buffers first so relative links and assets work.
@@ -1158,7 +1173,8 @@ Buffers without a file, or narrowed buffers, use a temporary HTML file."
     (setq-local kill-buffer-query-functions
                 (remq #'xwidget-kill-buffer-query-function
                       kill-buffer-query-functions)))
-  :hook (xwidget-webkit-mode . my/xwidget-webkit-disable-kill-query))
+  :hook ((xwidget-webkit-mode . my/xwidget-webkit-disable-kill-query)
+         (xwidget-webkit-mode . my/xwidget-webkit-enable-copy-keys)))
 
 (use-package valign
   :straight (:host github :repo "casouri/valign" :branch "master")
