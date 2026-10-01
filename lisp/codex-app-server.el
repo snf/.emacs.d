@@ -44,8 +44,8 @@ The app-server endpoint is appended as `--endpoint ENDPOINT'."
   :type 'string)
 
 (defcustom codex-app-server-codex-program
-  "/home/core/.emacs.d/.cache/codex/bin/codex-0.157.1-resume-cwd"
-  "Codex CLI program used by remote Ghostel sessions.
+  "/home/core/.emacs.d/.cache/codex/bin/codex-0.159.0-resume-cwd"
+  "Codex CLI program used by the shared app-server and remote Ghostel sessions.
 
 This build preserves the remote cwd override when an active TUI opens its
 resume picker."
@@ -75,6 +75,13 @@ resume picker."
 
 (defun codex-app-server--log-buffer ()
   (get-buffer-create " *codex-app-server-start*"))
+
+(defun codex-app-server--stack-codex-command ()
+  "Return the exact Codex app-server command for the mobile stack."
+  (mapconcat #'shell-quote-argument
+             (list codex-app-server-codex-program
+                   "app-server" "--listen" codex-app-server-endpoint)
+             " "))
 
 (defun codex-app-server--cancel-timers ()
   (when (timerp codex-app-server--poll-timer)
@@ -137,16 +144,21 @@ resume picker."
         (let ((buffer (codex-app-server--log-buffer)))
           (with-current-buffer buffer
             (erase-buffer))
-          (setq codex-app-server--start-process
-                (make-process
-                 :name "codex-mobile-stack-start"
-                 :buffer buffer
-                 :command (append codex-app-server-start-command
-                                  (list "--endpoint"
-                                        codex-app-server-endpoint))
-                 :connection-type 'pipe
-                 :noquery t
-                 :sentinel #'codex-app-server--start-sentinel)))
+          (let ((process-environment (copy-sequence process-environment)))
+            ;; mobile_stack.py propagates this to its detached supervisor, which
+            ;; uses it instead of resolving a potentially stale `codex' on PATH.
+            (setenv "TAKOPI_STACK_CODEX_COMMAND"
+                    (codex-app-server--stack-codex-command))
+            (setq codex-app-server--start-process
+                  (make-process
+                   :name "codex-mobile-stack-start"
+                   :buffer buffer
+                   :command (append codex-app-server-start-command
+                                    (list "--endpoint"
+                                          codex-app-server-endpoint))
+                   :connection-type 'pipe
+                   :noquery t
+                   :sentinel #'codex-app-server--start-sentinel))))
       (error
        (codex-app-server--complete
         (format "Could not start the Codex mobile stack: %s"
