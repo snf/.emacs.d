@@ -611,6 +611,10 @@
                           user-emacs-directory) nil 'nomessage)
   (ghostel-cache-maintenance-mode 1)
 
+  (load (expand-file-name "lisp/ghostel-codex-copy.el"
+                          user-emacs-directory) nil 'nomessage)
+  (add-hook 'ghostel-mode-hook #'ghostel-codex-copy-setup)
+
   (defun my/ghostel-browse-url-in-webkit (url &optional _new-window)
     "Open URL in a new WebKit buffer in the selected Emacs window."
     (unless (and (display-graphic-p) (featurep 'xwidget-internal))
