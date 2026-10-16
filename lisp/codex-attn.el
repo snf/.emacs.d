@@ -71,6 +71,7 @@ and makes expired snoozes visible without requiring another completion."
 (defvar codex-attn--thread-id->buffer (make-hash-table :test 'equal))
 (defvar codex-attn--sessions-by-buffer (make-hash-table :test 'eq))
 (defvar codex-attn--state-cache (make-hash-table :test 'equal))
+(defvar codex-attn--acknowledged-cache (make-hash-table :test 'equal))
 (defvar codex-attn--snoozed-until (make-hash-table :test 'equal))
 (defvar codex-attn--watches nil)
 (defvar codex-attn--poll-timer nil)
@@ -98,6 +99,7 @@ query functions such as `codex-attn-buffers' and
 (defvar codex-attn--emacs-instance-id (codex-attn--new-id "emacs"))
 (defvar-local codex-attn-terminal-id nil)
 (defvar-local codex-attn-thread-id nil)
+(defvar-local codex-attn--thread-binding-explicit nil)
 (defvar-local codex-attn--terminal-cleaned-up nil)
 
 (defvar codex-attn--modeline-map
@@ -293,6 +295,8 @@ The returned buffer objects retain their identity when their names change."
   "Bind Codex terminal BUFFER to app-server THREAD-ID."
   (unless (codex-attn--provider-terminal-buffer-p buffer 'codex)
     (error "Not a live Codex terminal buffer: %s" buffer))
+  (with-current-buffer buffer
+    (setq codex-attn--thread-binding-explicit t))
   (codex-attn--record-thread-binding buffer thread-id)
   (if (and (boundp 'codex-attn-mode) codex-attn-mode)
       (codex-attn--schedule-refresh)
@@ -317,6 +321,8 @@ identifies the completed turn."
       (error "Invalid %s thread id: %S" provider thread-id))
     (unless (and state-dir (stringp state-dir))
       (error "No attention state directory for provider %s" provider))
+    (with-current-buffer buffer
+      (setq codex-attn--thread-binding-explicit t))
     (codex-attn--record-thread-binding buffer thread-id)
     (make-directory state-dir t)
     (let* ((file (expand-file-name (concat thread-id ".json") state-dir))
@@ -337,14 +343,16 @@ identifies the completed turn."
                        :emacs_instance_id codex-attn--emacs-instance-id
                        :terminal_id
                        (buffer-local-value 'codex-attn-terminal-id buffer)))
-           (temporary (make-temp-file (expand-file-name ".codex-attn-" state-dir))))
-      (unwind-protect
-          (progn
-            (with-temp-file temporary
-              (insert (json-encode data)))
-            (rename-file temporary file t))
-        (when (file-exists-p temporary)
-          (delete-file temporary)))
+           (temporary (unless (codex-attn--turn-acknowledged-p file turn-id)
+                        (make-temp-file (expand-file-name ".codex-attn-" state-dir)))))
+      (when temporary
+        (unwind-protect
+            (progn
+              (with-temp-file temporary
+                (insert (json-encode data)))
+              (rename-file temporary file t))
+          (when (file-exists-p temporary)
+            (delete-file temporary))))
       (if (and (boundp 'codex-attn-mode) codex-attn-mode)
           (codex-attn--refresh)
         (run-hooks 'codex-attn-state-change-hook)))
@@ -394,18 +402,66 @@ identifies the completed turn."
   (plist-get session :file))
 
 (defun codex-attn--buffer-for-session (session)
-  (or (codex-attn--buffer-for-thread-id
-       (codex-attn--session-thread-id session))
-      (when (codex-attn--session-owned-p session)
-        (let ((buffer
-               (codex-attn--buffer-for-terminal-id
-                (codex-attn--session-terminal-id session))))
-          ;; Standalone Codex still identifies itself through the terminal
-          ;; environment.  Learn its canonical thread id on the first event.
-          (when (and buffer (codex-attn--session-thread-id session))
-            (codex-attn--record-thread-binding
-             buffer (codex-attn--session-thread-id session)))
-          buffer))))
+  (let* ((thread-id (codex-attn--session-thread-id session))
+         (terminal (and (codex-attn--session-owned-p session)
+                        (codex-attn--buffer-for-terminal-id
+                         (codex-attn--session-terminal-id session)))))
+    (or
+     ;; Multiple terminals can display one thread.  Its originating terminal
+     ;; takes precedence over the single buffer stored in the thread index.
+     (when (and terminal
+                (or (not (buffer-local-value 'codex-attn--thread-binding-explicit terminal))
+                    (null (buffer-local-value 'codex-attn-thread-id terminal))
+                    (equal thread-id
+                           (buffer-local-value 'codex-attn-thread-id terminal))))
+       (when thread-id
+         (codex-attn--record-thread-binding terminal thread-id))
+       terminal)
+     ;; A terminal may have switched threads, or a thread may have been resumed
+     ;; in a new terminal.  Never replace an explicit binding with an old event.
+     (codex-attn--buffer-for-thread-id thread-id))))
+
+(defun codex-attn--acknowledgement-file (file)
+  (expand-file-name (concat "acknowledged/" (file-name-nondirectory file))
+                    (file-name-directory file)))
+
+(defun codex-attn--acknowledged-turns (file)
+  "Return durable read receipts for attention FILE, caching unchanged JSON."
+  (let* ((receipt (codex-attn--acknowledgement-file file))
+         (signature (codex-attn--file-signature receipt))
+         (cached (gethash receipt codex-attn--acknowledged-cache)))
+    (unless (equal signature (plist-get cached :signature))
+      (let ((turns (condition-case nil
+                       (let ((json-object-type 'plist)
+                             (json-key-type 'keyword)
+                             (json-array-type 'list))
+                         (plist-get (json-read-file receipt) :turn_ids))
+                     (error nil))))
+        (setq cached (list :signature signature :turns turns))
+        (puthash receipt cached codex-attn--acknowledged-cache)))
+    (plist-get cached :turns)))
+
+(defun codex-attn--turn-acknowledged-p (file turn-id)
+  (and file turn-id (member turn-id (codex-attn--acknowledged-turns file))))
+
+(defun codex-attn--remember-acknowledged-turn (session)
+  "Persist a read receipt before removing SESSION's pending state."
+  (let ((file (plist-get session :file))
+        (turn-id (plist-get session :turn_id)))
+    (when (and file turn-id
+               (not (codex-attn--turn-acknowledged-p file turn-id)))
+      (let* ((receipt (codex-attn--acknowledgement-file file))
+             (directory (file-name-directory receipt))
+             (turns (cons turn-id (codex-attn--acknowledged-turns file))))
+        (make-directory directory t)
+        (let ((temporary (make-temp-file (expand-file-name ".receipt-" directory))))
+          (unwind-protect
+              (progn
+                (with-temp-file temporary
+                  (insert (json-encode (list :turn_ids (vconcat turns)))))
+                (rename-file temporary receipt t))
+            (when (file-exists-p temporary)
+              (delete-file temporary))))))))
 
 (defun codex-attn--visible-pending-sessions ()
   codex-attn--actionable-session-list)
@@ -430,9 +486,16 @@ identifies the completed turn."
 (defun codex-attn--ack-visible-sessions ()
   (let* ((buf (codex-attn--current-attn-buffer))
          (sessions (and (buffer-live-p buf)
-                        (copy-sequence
-                         (gethash buf codex-attn--sessions-by-buffer)))))
+                        (seq-filter
+                         (lambda (session)
+                           (or (memq session (gethash buf codex-attn--sessions-by-buffer))
+                               (and (equal (codex-attn--session-thread-id session)
+                                           (buffer-local-value 'codex-attn-thread-id buf))
+                                    (eq (codex-attn--session-provider session)
+                                        (codex-attn--buffer-provider buf)))))
+                         codex-attn--pending-sessions))))
     (dolist (session sessions)
+      (codex-attn--remember-acknowledged-turn session)
       (codex-attn--forget-session session t))
     (when sessions
       (codex-attn--rebuild-actionable-index))
@@ -540,7 +603,9 @@ identifies the completed turn."
     (maphash
      (lambda (_file entry)
        (let ((session (plist-get entry :session)))
-         (when (and session (codex-attn--session-relevant-p session))
+         (when (and session (codex-attn--session-relevant-p session)
+                    (not (codex-attn--turn-acknowledged-p
+                          (plist-get session :file) (plist-get session :turn_id))))
            (push session sessions))))
      codex-attn--state-cache)
     sessions))
@@ -724,7 +789,7 @@ identifies the completed turn."
 (defun codex-attn--on-buffer-visibility-change (&rest _)
   (when codex-attn-mode
     ;; The expensive filesystem reconciliation happens only on watcher/poll
-    ;; refreshes.  This hot UI hook performs a direct buffer hash lookup.
+    ;; refreshes.  This hot UI hook only examines cached pending sessions.
     (codex-attn--ack-visible-sessions)
     (codex-attn--update-indicator)))
 
@@ -759,10 +824,10 @@ identifies the completed turn."
                          provider short-thread short-cwd clean-msg))))
 
 (defun codex-attn-pending-sessions (&optional order)
-  "Return pending sessions as plists.
+  "Return pending sessions with live terminal targets as plists.
 ORDER can be `fifo` or `recent`."
   (codex-attn--refresh)
-  (let ((sessions codex-attn--pending-sessions))
+  (let ((sessions codex-attn--actionable-session-list))
     (pcase order
       ('recent (codex-attn--sort-sessions sessions #'codex-attn--session-last-event #'>))
       ('fifo (codex-attn--sort-sessions sessions #'codex-attn--session-pending-since #'<))
@@ -783,6 +848,7 @@ ORDER can be `fifo` or `recent`."
     sessions))
 
 (defun codex-attn--ack-session (session)
+  (codex-attn--remember-acknowledged-turn session)
   (codex-attn--forget-session session t)
   (codex-attn--rebuild-actionable-index)
   (codex-attn--update-indicator))
@@ -832,7 +898,9 @@ ORDER can be `fifo` or `recent`."
          (buf (codex-attn--buffer-for-session session)))
     (if (buffer-live-p buf)
         (progn
-          (pop-to-buffer buf)
+          (if-let* ((window (get-buffer-window buf t)))
+              (select-window window)
+            (switch-to-buffer buf))
           (codex-attn--ack-session session))
       (message "codex-attn: no buffer mapped for %s thread %s."
                provider (or thread-id "unknown")))))

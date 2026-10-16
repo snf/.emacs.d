@@ -335,6 +335,18 @@ def main():
         ):
             _atomic_write_json(context_path, context_data)
 
+    # Emacs removes pending files after viewing a turn, but keeps read receipts
+    # separately so a late duplicate cannot recreate an already-read alert.
+    acknowledged = _read_json_file(
+        os.path.join(state_dir, "acknowledged", f"{thread_id}.json")
+    )
+    if (
+        turn_id is not None
+        and acknowledged
+        and turn_id in acknowledged.get("turn_ids", [])
+    ):
+        return 0
+
     # Codex can deliver the same completed-turn notification more than once.
     # Avoid rewriting the file in that case: besides needless I/O, every replace
     # wakes Emacs' file watcher.  A missing turn id is not safe to deduplicate.

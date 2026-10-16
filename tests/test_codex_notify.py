@@ -201,6 +201,31 @@ class CodexNotifyTests(unittest.TestCase):
         self.assertEqual(after["pending_since"], before["pending_since"])
         self.assertGreater(after["last_event_ts"], before["last_event_ts"])
 
+    def test_read_receipt_blocks_late_duplicate_after_pending_file_is_removed(self):
+        event = {
+            "type": "agent-turn-complete",
+            "thread_id": "thread-1",
+            "turn_id": "turn-1",
+        }
+        self.notify(event)
+        receipts = self.state_dir / "acknowledged"
+        receipts.mkdir()
+        (receipts / "thread-1.json").write_text(json.dumps({"turn_ids": ["turn-1"]}))
+        (self.state_dir / "thread-1.json").unlink()
+        self.notify(event)
+        self.assertFalse((self.state_dir / "thread-1.json").exists())
+        self.assertEqual(self.read_context()["turn_id"], "turn-1")
+
+        self.notify({**event, "turn_id": "turn-2"})
+        self.assertEqual(self.read()["turn_id"], "turn-2")
+
+    def test_read_receipts_do_not_suppress_a_completion_without_a_turn_id(self):
+        receipts = self.state_dir / "acknowledged"
+        receipts.mkdir(parents=True)
+        (receipts / "thread-1.json").write_text(json.dumps({"turn_ids": ["turn-1"]}))
+        self.notify({"type": "agent-turn-complete", "thread_id": "thread-1"})
+        self.assertIsNone(self.read()["turn_id"])
+
     def test_concurrent_writers_leave_valid_json_and_no_temps(self):
         processes = []
         for number in range(12):

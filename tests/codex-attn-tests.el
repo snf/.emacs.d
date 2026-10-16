@@ -64,6 +64,7 @@ the new buffer, using `ghostel-mode' unless MODE is supplied."
           (codex-attn--thread-id->buffer (make-hash-table :test 'equal))
           (codex-attn--sessions-by-buffer (make-hash-table :test 'eq))
           (codex-attn--state-cache (make-hash-table :test 'equal))
+          (codex-attn--acknowledged-cache (make-hash-table :test 'equal))
           (codex-attn--snoozed-until (make-hash-table :test 'equal)))
      (unwind-protect
          (progn
@@ -460,6 +461,147 @@ the new buffer, using `ghostel-mode' unless MODE is supplied."
                 (should (codex-attn-buffer-needs-attention-p buf))))
           (codex-attn--stop-watch)
           (codex-attn--stop-blink))))))
+
+(ert-deftest codex-attn-read-receipt-survives-cache-reset-and-late-duplicate ()
+  (codex-attn-test--with-state
+    (codex-attn-test--with-buffers
+        ((buf "*codex: duplicate*" "/tmp/"))
+      (codex-attn-bind-buffer-thread buf "thread-duplicate")
+      (let ((file (codex-attn-test--write-state
+                   codex-attn-state-dir "thread-duplicate" :turn_id "turn-read")))
+        (codex-attn--refresh)
+        (codex-attn--ack-session (car codex-attn--pending-sessions))
+        (should-not (file-exists-p file))
+        ;; Recreate the event with a fresh timestamp, as the shared hook can.
+        ;; Empty caches also model a new Emacs process reading the receipts.
+        (clrhash codex-attn--state-cache)
+        (clrhash codex-attn--acknowledged-cache)
+        (codex-attn-test--write-state
+         codex-attn-state-dir "thread-duplicate" :turn_id "turn-read" :timestamp 99)
+        (codex-attn--refresh)
+        (should-not (codex-attn-buffer-needs-attention-p buf))
+        (codex-attn-test--write-state
+         codex-attn-state-dir "thread-duplicate" :turn_id "turn-new")
+        (codex-attn--refresh)
+        (should (codex-attn-buffer-needs-attention-p buf))))))
+
+(ert-deftest codex-attn-proxy-duplicate-does-not-recreate-read-turn ()
+  (codex-attn-test--with-state
+    (codex-attn-test--with-buffers
+        ((buf "*codex: proxy-duplicate*" "/tmp/"))
+      (codex-attn-notify-buffer buf 'codex "thread-duplicate" "turn-read")
+      (codex-attn--refresh)
+      (codex-attn--ack-session (car codex-attn--pending-sessions))
+      (codex-attn-notify-buffer buf 'codex "thread-duplicate" "turn-read")
+      (codex-attn--refresh)
+      (should-not (file-exists-p
+                   (expand-file-name "thread-duplicate.json" codex-attn-state-dir)))
+      (should-not (codex-attn-buffer-needs-attention-p buf)))))
+
+(ert-deftest codex-attn-originating-terminal-wins-over-duplicate-thread-index ()
+  (codex-attn-test--with-state
+    (codex-attn-test--with-buffers
+        ((origin "*codex: origin*" "/tmp/")
+         (duplicate "*codex: duplicate*" "/tmp/"))
+      (codex-attn-bind-buffer-thread origin "thread-shared")
+      (codex-attn-bind-buffer-thread duplicate "thread-shared")
+      (should (eq duplicate (codex-attn--buffer-for-thread-id "thread-shared")))
+      (let ((session (list :thread_id "thread-shared"
+                           :emacs_instance_id "test-emacs"
+                           :terminal_id (buffer-local-value 'codex-attn-terminal-id origin))))
+        (should (eq origin (codex-attn--buffer-for-session session)))))))
+
+(ert-deftest codex-attn-old-completion-never-rebinds-switched-terminal ()
+  (codex-attn-test--with-state
+    (codex-attn-test--with-buffers
+        ((buf "*codex: switched*" "/tmp/"))
+      (codex-attn-bind-buffer-thread buf "thread-current")
+      (let ((session (list :thread_id "thread-old"
+                           :emacs_instance_id "test-emacs"
+                           :terminal_id (buffer-local-value 'codex-attn-terminal-id buf))))
+        (should-not (codex-attn--buffer-for-session session))
+        (should (equal "thread-current" (buffer-local-value 'codex-attn-thread-id buf)))))))
+
+(ert-deftest codex-attn-standalone-terminal-can-learn-a-new-session ()
+  (codex-attn-test--with-state
+    (codex-attn-test--with-buffers
+        ((buf "*opencode: standalone*" "/tmp/"))
+      (let ((session (list :thread_id "session-first"
+                           :emacs_instance_id "test-emacs"
+                           :terminal_id (buffer-local-value 'codex-attn-terminal-id buf))))
+        (should (eq buf (codex-attn--buffer-for-session session)))
+        (setq session (plist-put session :thread_id "session-next"))
+        (should (eq buf (codex-attn--buffer-for-session session)))
+        (should (equal "session-next" (buffer-local-value 'codex-attn-thread-id buf)))))))
+
+(ert-deftest codex-attn-viewing-either-terminal-acknowledges-shared-thread ()
+  (codex-attn-test--with-state
+    (codex-attn-test--with-buffers
+        ((origin "*codex: origin*" "/tmp/")
+         (viewed "*codex: viewed*" "/tmp/"))
+      (codex-attn-bind-buffer-thread origin "thread-shared")
+      (codex-attn-bind-buffer-thread viewed "thread-shared")
+      (save-window-excursion
+        (switch-to-buffer viewed)
+        (let ((file (codex-attn-test--write-state
+                     codex-attn-state-dir "thread-shared" :turn_id "turn-read"
+                     :emacs_instance_id "test-emacs"
+                     :terminal_id (buffer-local-value 'codex-attn-terminal-id origin))))
+          (cl-letf (((symbol-function 'frame-focus-state) (lambda (&optional _) t)))
+            (codex-attn--refresh))
+          (should-not (file-exists-p file))
+          (should-not codex-attn--pending-sessions)
+          (should (codex-attn--turn-acknowledged-p file "turn-read")))))))
+
+(ert-deftest codex-attn-jump-candidates-exclude-old-threads-in-switched-terminals ()
+  (codex-attn-test--with-state
+    (codex-attn-test--with-buffers
+        ((switched "*codex: switched*" "/tmp/")
+         (live "*codex: live*" "/tmp/"))
+      (codex-attn-bind-buffer-thread switched "thread-current")
+      (codex-attn-bind-buffer-thread live "thread-live")
+      (codex-attn-test--write-state
+       codex-attn-state-dir "thread-old"
+       :emacs_instance_id "test-emacs"
+       :terminal_id (buffer-local-value 'codex-attn-terminal-id switched))
+      (codex-attn-test--write-state codex-attn-state-dir "thread-live")
+      (let ((candidates (codex-attn-pending-sessions 'fifo)))
+        (should (= 1 (length candidates)))
+        (should (equal "thread-live" (plist-get (car candidates) :thread_id)))))))
+
+(ert-deftest codex-attn-jump-to-hidden-session-uses-selected-window ()
+  (codex-attn-test--with-state
+    (codex-attn-test--with-buffers
+        ((buf "*codex: hidden*" "/tmp/"))
+      (save-window-excursion
+        (delete-other-windows)
+        (let* ((source (selected-window))
+               (other (split-window-right))
+               (other-buffer (window-buffer other))
+               (session (list :thread_id "thread-hidden")))
+          (codex-attn-bind-buffer-thread buf "thread-hidden")
+          (codex-attn--jump-to-session session)
+          (should (eq source (selected-window)))
+          (should (eq buf (window-buffer source)))
+          (should (eq other-buffer (window-buffer other)))
+          (should (= 2 (length (window-list)))))))))
+
+(ert-deftest codex-attn-jump-to-visible-session-reuses-its-window ()
+  (codex-attn-test--with-state
+    (codex-attn-test--with-buffers
+        ((buf "*codex: visible*" "/tmp/"))
+      (save-window-excursion
+        (delete-other-windows)
+        (let* ((source (selected-window))
+               (source-buffer (window-buffer source))
+               (target (split-window-right))
+               (session (list :thread_id "thread-visible")))
+          (set-window-buffer target buf)
+          (codex-attn-bind-buffer-thread buf "thread-visible")
+          (codex-attn--jump-to-session session)
+          (should (eq target (selected-window)))
+          (should (eq source-buffer (window-buffer source)))
+          (should (= 2 (length (window-list)))))))))
 
 (provide 'codex-attn-tests)
 
