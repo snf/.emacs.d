@@ -10,6 +10,7 @@
 
 (require 'whisper)
 (require 'cl-lib)
+(require 'whisper-input)
 
 (declare-function codex-voice-cancel-dictation "codex-voice" ())
 
@@ -97,6 +98,7 @@ When nil, use ggml-silero-v6.2.0.bin in the Whisper installation's models direct
 (defun my/whisper--clear-long-recording-status ()
   "Hide the long-recording indicator and stop its timers."
   (my/whisper--cancel-long-recording-timers)
+  (my/whisper--stop-input-monitor)
   (setq my/whisper--long-recording-active nil
         my/whisper--long-recording-visible nil)
   (force-mode-line-update t))
@@ -144,7 +146,8 @@ When nil, use ggml-silero-v6.2.0.bin in the Whisper installation's models direct
 (defun my/whisper--watch-recording-start (&rest _)
   "Schedule long-recording status after Whisper has started recording."
   (when (whisper-recording-p)
-    (my/whisper--start-long-recording-timer)))
+    (my/whisper--start-long-recording-timer)
+    (my/whisper--start-input-monitor)))
 
 (defun my/whisper--watch-recording-mode-line (command phase)
   "Clear long-recording status when Whisper hides its recording indicator."
@@ -222,7 +225,7 @@ When nil, use ggml-silero-v6.2.0.bin in the Whisper installation's models direct
 ;; When this file is reloaded during an existing recording, preserve the
 ;; original five-minute threshold instead of starting a fresh five-minute wait.
 (when (whisper-recording-p)
-  (my/whisper--start-long-recording-timer))
+  (my/whisper--watch-recording-start))
 
 (defun my/whisper-cancel-recording ()
   "Cancel the current Whisper recording without transcribing partial audio.
@@ -253,6 +256,7 @@ When TRANSLATE is non-nil, translate its output to English."
   (let ((starting (not (or (whisper-recording-p) (whisper-transcribing-p)))))
     (if (not starting)
         (whisper-run)
+      (my/whisper--check-input)
       (setq my/whisper--target-buffer (current-buffer))
       ;; Whisper checks this before recording.  Let a read-only target proceed
       ;; so the output handler can place the result in its fallback buffer.

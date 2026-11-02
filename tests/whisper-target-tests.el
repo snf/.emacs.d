@@ -67,6 +67,7 @@
     (unwind-protect
         (cl-letf (((symbol-function 'whisper-recording-p)
                    (lambda () recording))
+                  ((symbol-function 'my/whisper--check-input) #'ignore)
                   ((symbol-function 'whisper-transcribing-p)
                    (lambda () nil))
                   ((symbol-function 'whisper-run)
@@ -117,12 +118,15 @@
 
 (ert-deftest whisper-target-recording-hooks-manage-long-status ()
   "Whisper's recording lifecycle starts and clears the five-minute status."
-  (let (timer-started)
+  (let (timer-started monitor-started)
     (cl-letf (((symbol-function 'whisper-recording-p) (lambda () t))
               ((symbol-function 'my/whisper--start-long-recording-timer)
-               (lambda () (setq timer-started t))))
+               (lambda () (setq timer-started t)))
+              ((symbol-function 'my/whisper--start-input-monitor)
+               (lambda () (setq monitor-started t))))
       (my/whisper--watch-recording-start)
-      (should timer-started))
+      (should timer-started)
+      (should monitor-started))
     (unwind-protect
         (progn
           (my/whisper--show-long-recording-status)
@@ -264,7 +268,8 @@
             (cl-letf (((symbol-function 'whisper-run)
                        (lambda (&optional _file)
                          (interactive "P")
-                         (push (whisper-command "audio.wav") commands))))
+                         (push (whisper-command "audio.wav") commands)))
+                      ((symbol-function 'my/whisper--check-input) #'ignore))
               (whisper-file)
               (my/whisper-transcribe)
               (my/whisper-translate)))

@@ -362,6 +362,18 @@
           (dolist (buffer (list output-buffer error-buffer))
             (when (buffer-live-p buffer) (kill-buffer buffer))))))))
 
+(ert-deftest codex-voice-checks-the-microphone-before-installing-a-capture ()
+  (codex-voice-test--with-target
+    (let ((codex-voice--capture nil)
+          (whisper--recording-process nil)
+          (whisper--transcribing-process nil))
+      (cl-letf (((symbol-function 'my/whisper--check-input)
+                 (lambda () (user-error "Microphone disconnected")))
+                ((symbol-function 'codex-voice--run-whisper-for-capture)
+                 (lambda (&rest _) (ert-fail "Recording started without a microphone"))))
+        (should-error (codex-voice-dictate-followup) :type 'user-error)
+        (should-not codex-voice--capture)))))
+
 (provide 'codex-voice-tests)
 
 ;;; codex-voice-tests.el ends here

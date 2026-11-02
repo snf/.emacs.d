@@ -12,6 +12,7 @@
 (require 'subr-x)
 (require 'codex-app-server)
 (require 'codex-attn)
+(require 'whisper-input)
 
 (declare-function ghostel-paste-string "ghostel" (string))
 (declare-function ghostel-send-key "ghostel" (key-name &optional mods))
@@ -512,6 +513,7 @@ the originating Ghostel buffer.  With prefix argument REVIEW, reverse
     (codex-voice--clear-capture)
     (let* ((target (current-buffer))
            (_ (codex-voice--prepare-target target))
+           (_input (my/whisper--check-input))
            (context (codex-voice--read-context target))
            (submit (if review
                        (not codex-voice-submit-by-default)
