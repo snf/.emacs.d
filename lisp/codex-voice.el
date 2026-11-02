@@ -411,30 +411,41 @@ When EXPECTED is non-nil, only release it if it is still the active capture."
            (dictation (when (buffer-live-p output-buffer)
                         (with-current-buffer output-buffer
                           (string-trim (buffer-string)))))
-           (success (and (eq (process-status process) 'exit)
-                         (= (process-exit-status process) 0)
+           (exited-cleanly (and (eq (process-status process) 'exit)
+                               (= (process-exit-status process) 0)))
+           (success (and exited-cleanly
                          (not (string-empty-p (or dictation ""))))))
       (unwind-protect
-          (if success
-              (condition-case err
-                  (codex-voice--start-formatter
-                   (plist-get capture :target)
-                   (plist-get capture :context)
-                   dictation
-                   (plist-get capture :submit))
-                (error
-                 (kill-new dictation)
-                 (message "Could not start Codex voice formatter; copied transcript: %s"
-                          (error-message-string err))))
+          (cond
+           (success
+            (condition-case err
+                (codex-voice--start-formatter
+                 (plist-get capture :target)
+                 (plist-get capture :context)
+                 dictation
+                 (plist-get capture :submit))
+              (error
+               (kill-new dictation)
+               (message "Could not start Codex voice formatter; copied transcript: %s"
+                        (error-message-string err)))))
+           (exited-cleanly
+            (message "No speech detected; check microphone mute/input. Recording kept: %s"
+                     audio-file))
+           (t
             (when (buffer-live-p error-buffer)
+              (when audio-file
+                (with-current-buffer error-buffer
+                  (goto-char (point-max))
+                  (insert (format "\nRecording kept: %s\n" audio-file))))
               (display-buffer error-buffer))
             (message "Codex voice transcription failed%s"
-                     (if dictation (format ": %s" dictation) "")))
+                     (if (string-empty-p (or dictation "")) ""
+                       (format ": %s" dictation)))))
         (when (buffer-live-p output-buffer)
           (kill-buffer output-buffer))
-        (when (and success (buffer-live-p error-buffer))
+        (when (and exited-cleanly (buffer-live-p error-buffer))
           (kill-buffer error-buffer))
-        (when (and audio-file (file-exists-p audio-file))
+        (when (and success audio-file (file-exists-p audio-file))
           (delete-file audio-file))))))
 
 (defun codex-voice--start-transcription (capture audio-file)

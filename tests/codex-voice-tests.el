@@ -313,6 +313,55 @@
       (kill-buffer (current-buffer))
       (should (file-exists-p file)))))
 
+(ert-deftest codex-voice-empty-and-failed-transcriptions-keep-audio ()
+  "Silence is a normal outcome; actual failures retain visible diagnostics."
+  (dolist (exit-code '(0 2))
+    (codex-voice-test--with-target
+      (let* ((fake-whisper (expand-file-name "fake-whisper" root))
+             (audio-file (expand-file-name "recording.wav" root))
+             (codex-voice--transcription-processes nil)
+             process output-buffer error-buffer displayed last-message)
+        (with-temp-file fake-whisper
+          (insert "#!/bin/sh\nprintf 'ASR diagnostic\\n' >&2\nprintf ' \\n'\n"
+                  (format "exit %d\n" exit-code)))
+        (set-file-modes fake-whisper #o700)
+        (with-temp-file audio-file (insert "fake audio"))
+        (unwind-protect
+            (progn
+              (cl-letf (((symbol-function 'whisper-command)
+                         (lambda (_file) (list fake-whisper)))
+                        ((symbol-function 'codex-voice--start-formatter)
+                         (lambda (&rest _) (ert-fail "Empty dictation was submitted")))
+                        ((symbol-function 'display-buffer)
+                         (lambda (buffer &rest _) (setq displayed buffer)))
+                        ((symbol-function 'message)
+                         (lambda (format-string &rest args)
+                           (setq last-message (apply #'format format-string args)))))
+                (setq process
+                      (codex-voice--start-transcription
+                       (list :target (current-buffer) :context nil :submit t)
+                       audio-file)
+                      output-buffer (process-buffer process)
+                      error-buffer (process-get process 'codex-voice-error-buffer))
+                (while (process-live-p process)
+                  (accept-process-output process 0.1))
+                (accept-process-output nil 0.05))
+              (should (file-exists-p audio-file))
+              (should-not (buffer-live-p output-buffer))
+              (should-not codex-voice--transcription-processes)
+              (if (zerop exit-code)
+                  (progn
+                    (should-not displayed)
+                    (should-not (buffer-live-p error-buffer))
+                    (should (string-match-p "No speech detected" last-message)))
+                (should (eq displayed error-buffer))
+                (should (string-match-p "transcription failed" last-message))
+                (with-current-buffer error-buffer
+                  (should (string-match-p "ASR diagnostic" (buffer-string)))
+                  (should (string-match-p (regexp-quote audio-file) (buffer-string))))))
+          (dolist (buffer (list output-buffer error-buffer))
+            (when (buffer-live-p buffer) (kill-buffer buffer))))))))
+
 (provide 'codex-voice-tests)
 
 ;;; codex-voice-tests.el ends here
