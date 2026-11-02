@@ -150,6 +150,8 @@
   "Delayed conversion uses Large/Silero; the next ordinary file uses Small."
   (let* ((directory (make-temp-file "whisper-better-test-" t))
          (my/whisper-better-model-directory directory)
+         (my/whisper-silero-model-file
+          (expand-file-name "ggml-silero-v6.2.0.bin" directory))
          (whisper--temp-file (expand-file-name "audio.wav" directory))
          (whisper-install-directory directory)
          (whisper-model "small")
@@ -195,18 +197,19 @@
             ;; The command returns before FFmpeg's sentinel starts inference.
             (should (equal whisper-model "small"))
             (should (eq whisper-server-mode 'remote))
-            (should-not (member "--vad" (whisper-command "ordinary.wav")))
+            (should (member "--vad" (whisper-command "ordinary.wav")))
             (should-error
              (funcall (process-sentinel whisper--recording-process)
                       whisper--recording-process "exited abnormally with code 1\n"))
             (should (eq whisper-server-mode 'remote))
-            (should-not (member "--vad" (whisper-command "ordinary.wav")))
+            (should (member "--vad" (whisper-command "ordinary.wav")))
             (funcall (process-sentinel whisper--recording-process)
                      whisper--recording-process "finished\n")
             (let ((command (car commands)))
               (should (equal (cadr (member "--model" command))
                              (expand-file-name "ggml-large-v3-q5_0.bin" directory)))
               (should (member "--vad" command))
+              (should (= 1 (cl-count "--vad" command :test #'equal)))
               (should (member "--suppress-nst" command))
               (should (equal (cadr (member "--vad-model" command))
                              (expand-file-name "ggml-silero-v6.2.0.bin" directory))))
@@ -221,7 +224,9 @@
             (let ((command (car commands)))
               (should (string-suffix-p "ggml-small.bin"
                                        (cadr (member "--model" command))))
-              (should-not (member "--vad" command)))))
+              (should (= 1 (cl-count "--vad" command :test #'equal)))
+              (should (equal (cadr (member "--vad-model" command))
+                             my/whisper-silero-model-file)))))
       (dolist (process processes)
         (set-process-sentinel process #'ignore)
         (delete-process process))
@@ -243,5 +248,43 @@
       (should-error (whisper-file-better "/unused.mp4") :type 'user-error))
     (should (equal whisper-model "small"))
     (should (eq (symbol-function 'whisper-command) original-command))))
+
+(ert-deftest whisper-target-silero-covers-file-microphone-and-translation ()
+  "The shared builder adds Silero to all entry points while keeping Small."
+  (let ((model (make-temp-file "whisper-silero-test-"))
+        (whisper-model "small")
+        (whisper-quantize nil)
+        (whisper-language "es")
+        (whisper--recording-process nil)
+        (whisper--transcribing-process nil)
+        commands)
+    (unwind-protect
+        (let ((my/whisper-silero-model-file model))
+          (with-temp-buffer
+            (cl-letf (((symbol-function 'whisper-run)
+                       (lambda (&optional _file)
+                         (interactive "P")
+                         (push (whisper-command "audio.wav") commands))))
+              (whisper-file)
+              (my/whisper-transcribe)
+              (my/whisper-translate)))
+          ;; Codex voice also calls the shared builder directly.
+          (push (whisper-command "codex-audio.wav") commands)
+          (should (= (length commands) 4))
+          (dolist (command commands)
+            (should (string-suffix-p "ggml-small.bin"
+                                     (cadr (member "--model" command))))
+            (should (= 1 (cl-count "--vad" command :test #'equal)))
+            (should (equal (cadr (member "--vad-model" command)) model))
+            (should (equal (cadr (member "--language" command)) "es")))
+          (should (member "--translate" (nth 1 commands)))
+          (should-not (member "--translate" (nth 2 commands))))
+      (setq my/whisper--target-buffer nil)
+      (delete-file model))))
+
+(ert-deftest whisper-target-silero-missing-model-errors-clearly ()
+  "Missing Silero weights must not silently turn speech detection off."
+  (let ((my/whisper-silero-model-file "/missing-whisper-silero-model.bin"))
+    (should-error (whisper-command "audio.wav") :type 'user-error)))
 
 ;;; whisper-target-tests.el ends here

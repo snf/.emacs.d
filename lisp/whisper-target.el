@@ -20,11 +20,30 @@
   "Dynamically bound tag used to leave a failed Whisper insertion.")
 
 (defcustom my/whisper-better-model-directory nil
-  "Directory containing Large v3 Q5_0 and Silero v6.2.0 model files.
+  "Directory containing the Large v3 Q5_0 model file.
 When nil, use whisper.cpp/models under `whisper-install-directory'.
 Only `whisper-file-better' uses these models."
   :type '(choice (const :tag "Whisper installation" nil) directory)
   :group 'whisper)
+
+(defcustom my/whisper-silero-model-file nil
+  "Silero v6.2.0 model file used by all local Whisper commands.
+When nil, use ggml-silero-v6.2.0.bin in the Whisper installation's models directory."
+  :type '(choice (const :tag "Whisper installation" nil) file)
+  :group 'whisper)
+
+(defun my/whisper--add-silero (command)
+  "Enable Silero speech detection in the local Whisper COMMAND."
+  (if (member "--vad" command)
+      command
+    (let ((model (or my/whisper-silero-model-file
+                     (expand-file-name "whisper.cpp/models/ggml-silero-v6.2.0.bin"
+                                       whisper-install-directory))))
+      (unless (file-readable-p model)
+        (user-error "Silero model is missing or unreadable: %s" model))
+      (append command (list "--vad" "--vad-model" model)))))
+
+(advice-add 'whisper-command :filter-return #'my/whisper--add-silero)
 
 (defcustom my/whisper-long-recording-delay 300
   "Seconds to wait before showing the long-recording indicator."
@@ -269,21 +288,19 @@ used by `whisper-file' or microphone dictation."
                      (expand-file-name "whisper.cpp/models"
                                        whisper-install-directory)))
          (model (expand-file-name "ggml-large-v3-q5_0.bin" models))
-         (vad (expand-file-name "ggml-silero-v6.2.0.bin" models))
          (original-command (symbol-function 'whisper-command))
          (command (lambda (input-file)
                     (let ((args (funcall original-command input-file)))
                       (setf (cadr (member "--model" args)) model)
-                      (append args (list "--vad" "--vad-model" vad)))))
+                      args)))
          (run (lambda (function &rest args)
                 (let ((whisper-install-whispercpp nil)
                       (whisper-server-mode nil))
                   (cl-letf (((symbol-function 'whisper-command) command))
                     (apply function args)))))
          (previous-process whisper--recording-process))
-    (dolist (file (list model vad))
-      (unless (file-readable-p file)
-        (user-error "Whisper Better model is missing or unreadable: %s" file)))
+    (unless (file-readable-p model)
+      (user-error "Whisper Better model is missing or unreadable: %s" model))
     (unless (file-readable-p file)
       (user-error "Media file is missing or unreadable: %s" file))
     (funcall run #'whisper-run (expand-file-name file))
