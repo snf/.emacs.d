@@ -44,7 +44,7 @@ The app-server endpoint is appended as `--endpoint ENDPOINT'."
   :type 'string)
 
 (defcustom codex-app-server-codex-program
-  "/home/core/.emacs.d/.cache/codex/releases/0.162.1/bin/codex"
+  "/home/core/.emacs.d/.cache/codex/releases/0.164.0/bin/codex"
   "Codex CLI program used by the shared app-server and remote Ghostel sessions.
 
 This build preserves the remote cwd override when an active TUI opens its
