@@ -92,10 +92,19 @@
     (should (string-match-p "most recent request" prompt))
     (should-not (string-match-p "old request" prompt))))
 
-(ert-deftest codex-voice-uses-luna-with-max-reasoning ()
+(ert-deftest codex-voice-uses-terra-6-1-with-xhigh-reasoning ()
   (let ((command (codex-voice--formatter-command)))
-    (should (member "gpt-6-luna" command))
-    (should (member "model_reasoning_effort=\"max\"" command))))
+    (should (member "gpt-6.1-terra" command))
+    (should (member "model_reasoning_effort=\"xhigh\"" command))))
+
+(ert-deftest codex-voice-follows-configured-codex-runtime ()
+  "The default formatter must use the configured runtime rather than PATH."
+  (let ((codex-app-server-codex-program "/configured/release/bin/codex"))
+    (should (equal (car (codex-voice--formatter-command))
+                   codex-app-server-codex-program))
+    (setq codex-app-server-codex-program "/next/release/bin/codex")
+    (should (equal (car (codex-voice--formatter-command))
+                   codex-app-server-codex-program))))
 
 (ert-deftest codex-voice-delivers-with-bracketed-paste-and-return ()
   (codex-voice-test--with-target

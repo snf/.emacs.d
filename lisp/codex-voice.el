@@ -10,6 +10,7 @@
 (require 'cl-lib)
 (require 'json)
 (require 'subr-x)
+(require 'codex-app-server)
 (require 'codex-attn)
 
 (declare-function ghostel-paste-string "ghostel" (string))
@@ -32,15 +33,19 @@
   "Context-aware dictated follow-ups for Codex in Ghostel."
   :group 'tools)
 
-(defcustom codex-voice-codex-program "codex"
-  "Codex executable used to polish dictated follow-ups."
-  :type 'string)
+(defcustom codex-voice-codex-program nil
+  "Codex executable used to polish dictated follow-ups.
 
-(defcustom codex-voice-model "gpt-6-luna"
+When nil, use `codex-app-server-codex-program' so voice formatting follows
+the versioned runtime configured for Ghostel sessions."
+  :type '(choice (const :tag "Use the configured Codex runtime" nil)
+                 string))
+
+(defcustom codex-voice-model "gpt-6.1-terra"
   "Codex model used to translate and organize dictated follow-ups."
   :type 'string)
 
-(defcustom codex-voice-reasoning-effort "max"
+(defcustom codex-voice-reasoning-effort "xhigh"
   "Reasoning effort used by `codex-voice-model'."
   :type '(choice (const "low") (const "medium") (const "high")
                  (const "xhigh") (const "max")))
@@ -189,7 +194,7 @@ capture or scanning a potentially very large Codex rollout file."
 
 (defun codex-voice--formatter-command ()
   "Return the isolated Codex formatter command."
-  (list codex-voice-codex-program
+  (list (or codex-voice-codex-program codex-app-server-codex-program)
         "exec"
         "--ephemeral"
         "--ignore-user-config"
