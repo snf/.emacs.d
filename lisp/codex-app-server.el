@@ -10,6 +10,9 @@
 (require 'json)
 (require 'subr-x)
 
+(defconst codex-app-server--module-directory
+  (file-name-directory (or load-file-name buffer-file-name)))
+
 (defgroup codex-app-server nil
   "Shared Codex app-server integration."
   :group 'tools)
@@ -44,20 +47,18 @@ The app-server endpoint is appended as `--endpoint ENDPOINT'."
   :type 'string)
 
 (defcustom codex-app-server-codex-program
-  "/home/core/.emacs.d/.cache/codex/releases/0.166.0/bin/codex"
-  "Codex CLI program used by the shared app-server and remote Ghostel sessions.
+  (expand-file-name "../.cache/codex/npm/bin/codex"
+                    codex-app-server--module-directory)
+  "Emacs-managed official Codex used by the shared server and Ghostel sessions.
 
-This build preserves the remote cwd override when an active TUI opens its
-resume picker."
+Install or update it with scripts/codex-install.sh.  This stable path is
+independent of the global Codex on PATH and contains no release number."
   :type 'string)
 
 (defcustom codex-app-server-python-command
   '("uv" "run" "--project" "/projects/takopi" "python")
   "Command prefix for Python programs that need Takopi's dependencies."
   :type '(repeat string))
-
-(defconst codex-app-server--module-directory
-  (file-name-directory (or load-file-name buffer-file-name)))
 
 (defcustom codex-app-server-proxy-script
   (expand-file-name "../codex-app-server-proxy.py"
@@ -231,6 +232,29 @@ This function is suitable for `emacs-startup-hook'."
   (codex-app-server-ensure #'ignore
                            #'codex-app-server--display-startup-error
                            t))
+
+;;;###autoload
+(defun codex-app-server-restart-mobile-stack (&optional delay-seconds)
+  "Restart the shared stack after DELAY-SECONDS and three idle checks.
+
+The restart helper runs independently of the current Codex turn, which
+must finish before the shared server can become idle.  With a prefix
+argument, interactively read the delay in seconds."
+  (interactive (list (when current-prefix-arg
+                       (read-number "Restart delay in seconds: " 0))))
+  (when (process-live-p (get-process "codex-mobile-stack-restart"))
+    (user-error "A Codex mobile stack restart is already pending"))
+  (unless (file-executable-p codex-app-server-codex-program)
+    (user-error "Install the Emacs-managed Codex with scripts/codex-install.sh"))
+  (make-process
+   :name "codex-mobile-stack-restart"
+   :buffer (get-buffer-create " *codex-mobile-stack-restart*")
+   :command (append codex-app-server-python-command
+                    (list (expand-file-name "../scripts/codex-restart.py"
+                                            codex-app-server--module-directory)
+                          "--delay-seconds" (number-to-string (or delay-seconds 0))))
+   :connection-type 'pipe
+   :noquery t))
 
 (defun codex-app-server--check-thread (thread-id callback)
   "Asynchronously call CALLBACK with whether THREAD-ID is durable.

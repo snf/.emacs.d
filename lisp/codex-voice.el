@@ -37,7 +37,7 @@
   "Codex executable used to polish dictated follow-ups.
 
 When nil, use `codex-app-server-codex-program' so voice formatting follows
-the versioned runtime configured for Ghostel sessions."
+the Emacs-managed runtime configured for Ghostel sessions."
   :type '(choice (const :tag "Use the configured Codex runtime" nil)
                  string))
 

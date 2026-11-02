@@ -84,6 +84,38 @@
              (append codex-app-server-start-command
                      codex-app-server-python-command))))
 
+(ert-deftest codex-app-server-launcher-and-tui-share-the-managed-executable ()
+  (let ((codex-app-server-codex-program "/private npm/bin/codex")
+        (codex-app-server-start-command '("stack" "start"))
+        captured)
+    (codex-app-server-test--with-state
+      (cl-letf (((symbol-function 'make-process)
+                 (lambda (&rest _args)
+                   (setq captured (getenv "TAKOPI_STACK_CODEX_COMMAND"))
+                   'fake-process)))
+        (codex-app-server--start-stack)))
+    (should (equal (car (split-string-shell-command captured))
+                   codex-app-server-codex-program))
+    (should (equal (car (split-string-shell-command
+                        (codex-app-server-tui-command "/tmp")))
+                   codex-app-server-codex-program))))
+
+(ert-deftest codex-app-server-restart-does-not-launch-the-stack-directly ()
+  (let ((codex-app-server-codex-program "/private/bin/codex")
+        (codex-app-server-python-command '("uv" "run" "python"))
+        captured)
+    (cl-letf (((symbol-function 'get-process) (lambda (&rest _) nil))
+              ((symbol-function 'file-executable-p) (lambda (&rest _) t))
+              ((symbol-function 'make-process)
+               (lambda (&rest args) (setq captured args) 'fake-process)))
+      (codex-app-server-restart-mobile-stack 28800)
+      (should (equal (last (plist-get captured :command) 2)
+                     '("--delay-seconds" "28800")))
+      (should (member (expand-file-name "../scripts/codex-restart.py"
+                                       codex-app-server--module-directory)
+                      (plist-get captured :command)))
+      (should (plist-get captured :noquery)))))
+
 (ert-deftest codex-app-server-proxy-parses-ready-and-thread-events ()
   (let ((process (start-process "codex-proxy-parser-test" nil "true"))
         ready thread attention)
