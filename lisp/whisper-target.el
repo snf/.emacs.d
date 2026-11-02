@@ -9,6 +9,7 @@
 ;;; Code:
 
 (require 'whisper)
+(require 'cl-lib)
 
 (declare-function codex-voice-cancel-dictation "codex-voice" ())
 
@@ -17,6 +18,13 @@
 
 (defvar my/whisper--write-failure-tag nil
   "Dynamically bound tag used to leave a failed Whisper insertion.")
+
+(defcustom my/whisper-better-model-directory nil
+  "Directory containing Large v3 Q5_0 and Silero v6.2.0 model files.
+When nil, use whisper.cpp/models under `whisper-install-directory'.
+Only `whisper-file-better' uses these models."
+  :type '(choice (const :tag "Whisper installation" nil) directory)
+  :group 'whisper)
 
 (defcustom my/whisper-long-recording-delay 300
   "Seconds to wait before showing the long-recording indicator."
@@ -247,6 +255,42 @@ When TRANSLATE is non-nil, translate its output to English."
   "Toggle microphone translation in the buffer where recording began."
   (interactive)
   (my/whisper--start-or-stop t))
+
+(defun whisper-file-better (file)
+  "Transcribe FILE with Whisper Large v3 Q5_0 and Silero VAD.
+Use the usual file picker and output handling without changing the model
+used by `whisper-file' or microphone dictation."
+  (interactive "fMedia file: ")
+  (when (or (whisper-recording-p) (whisper-transcribing-p)
+            (and (buffer-live-p whisper--compilation-buffer)
+                 (process-live-p (get-buffer-process whisper--compilation-buffer))))
+    (user-error "Whisper is busy; finish or cancel the current job first"))
+  (let* ((models (or my/whisper-better-model-directory
+                     (expand-file-name "whisper.cpp/models"
+                                       whisper-install-directory)))
+         (model (expand-file-name "ggml-large-v3-q5_0.bin" models))
+         (vad (expand-file-name "ggml-silero-v6.2.0.bin" models))
+         (original-command (symbol-function 'whisper-command))
+         (command (lambda (input-file)
+                    (let ((args (funcall original-command input-file)))
+                      (setf (cadr (member "--model" args)) model)
+                      (append args (list "--vad" "--vad-model" vad)))))
+         (run (lambda (function &rest args)
+                (let ((whisper-install-whispercpp nil)
+                      (whisper-server-mode nil))
+                  (cl-letf (((symbol-function 'whisper-command) command))
+                    (apply function args)))))
+         (previous-process whisper--recording-process))
+    (dolist (file (list model vad))
+      (unless (file-readable-p file)
+        (user-error "Whisper Better model is missing or unreadable: %s" file)))
+    (unless (file-readable-p file)
+      (user-error "Media file is missing or unreadable: %s" file))
+    (funcall run #'whisper-run (expand-file-name file))
+    ;; Reapply this job's overrides when FFmpeg finishes converting the file.
+    (when (and (processp whisper--recording-process)
+               (not (eq whisper--recording-process previous-process)))
+      (add-function :around (process-sentinel whisper--recording-process) run))))
 
 (provide 'whisper-target)
 ;;; whisper-target.el ends here

@@ -146,4 +146,102 @@
       (when (buffer-live-p target)
         (kill-buffer target)))))
 
+(ert-deftest whisper-target-better-survives-conversion-without-changing-defaults ()
+  "Delayed conversion uses Large/Silero; the next ordinary file uses Small."
+  (let* ((directory (make-temp-file "whisper-better-test-" t))
+         (my/whisper-better-model-directory directory)
+         (whisper--temp-file (expand-file-name "audio.wav" directory))
+         (whisper-install-directory directory)
+         (whisper-model "small")
+         (whisper-quantize nil)
+         (whisper-language "es")
+         (whisper-install-whispercpp nil)
+         (whisper-server-mode 'remote)
+         (whisper-insert-text-at-point nil)
+         (whisper-show-progress-in-mode-line nil)
+         (whisper-before-transcription-hook nil)
+         (whisper--compilation-buffer nil)
+         (whisper--recording-process nil)
+         (whisper--transcribing-process nil)
+         (whisper--ffmpeg-input-file nil)
+         (original-input (default-value 'whisper--ffmpeg-input-file))
+         (original-command (symbol-function 'whisper-command))
+         commands processes)
+    (unwind-protect
+        (progn
+          (dolist (name '("audio.wav" "source.mp4" "ggml-large-v3-q5_0.bin"
+                          "ggml-silero-v6.2.0.bin"))
+            (write-region "" nil (expand-file-name name directory) nil 'silent))
+          (cl-letf (((symbol-function 'read-file-name)
+                     (lambda (&rest _) (expand-file-name "source.mp4" directory)))
+                    ;; Better must retain options supplied by whisper.el or
+                    ;; an existing command customization.
+                    ((symbol-function 'whisper-command)
+                     (lambda (input-file)
+                       (append (funcall original-command input-file)
+                               '("--suppress-nst"))))
+                    ((symbol-function 'whisper--find-whispercpp-main)
+                     (lambda () (executable-find "true")))
+                    ((symbol-function 'make-process)
+                     (lambda (&rest args)
+                       (push (plist-get args :command) commands)
+                       (let ((process (make-pipe-process
+                                       :name (plist-get args :name)
+                                       :noquery t
+                                       :sentinel (plist-get args :sentinel))))
+                         (push process processes)
+                         process))))
+            (whisper-file-better (expand-file-name "source.mp4" directory))
+            ;; The command returns before FFmpeg's sentinel starts inference.
+            (should (equal whisper-model "small"))
+            (should (eq whisper-server-mode 'remote))
+            (should-not (member "--vad" (whisper-command "ordinary.wav")))
+            (should-error
+             (funcall (process-sentinel whisper--recording-process)
+                      whisper--recording-process "exited abnormally with code 1\n"))
+            (should (eq whisper-server-mode 'remote))
+            (should-not (member "--vad" (whisper-command "ordinary.wav")))
+            (funcall (process-sentinel whisper--recording-process)
+                     whisper--recording-process "finished\n")
+            (let ((command (car commands)))
+              (should (equal (cadr (member "--model" command))
+                             (expand-file-name "ggml-large-v3-q5_0.bin" directory)))
+              (should (member "--vad" command))
+              (should (member "--suppress-nst" command))
+              (should (equal (cadr (member "--vad-model" command))
+                             (expand-file-name "ggml-silero-v6.2.0.bin" directory))))
+            (should (eq whisper-server-mode 'remote))
+            ;; Start an ordinary local file after the Better job.
+            (setq whisper--recording-process nil
+                  whisper--transcribing-process nil
+                  whisper-server-mode nil)
+            (whisper-file)
+            (funcall (process-sentinel whisper--recording-process)
+                     whisper--recording-process "finished\n")
+            (let ((command (car commands)))
+              (should (string-suffix-p "ggml-small.bin"
+                                       (cadr (member "--model" command))))
+              (should-not (member "--vad" command)))))
+      (dolist (process processes)
+        (set-process-sentinel process #'ignore)
+        (delete-process process))
+      (dolist (name (list whisper--stdout-buffer-name whisper--stderr-buffer-name))
+        (when (get-buffer name) (kill-buffer name)))
+      (setq-default whisper--ffmpeg-input-file original-input)
+      (delete-directory directory t))))
+
+(ert-deftest whisper-target-better-missing-model-leaves-defaults-alone ()
+  "Missing Better weights fail before prompting and keep Small available."
+  (let ((my/whisper-better-model-directory "/missing-whisper-better-models/")
+        (whisper-model "small")
+        (whisper--compilation-buffer nil)
+        (whisper--recording-process nil)
+        (whisper--transcribing-process nil)
+        (original-command (symbol-function 'whisper-command)))
+    (cl-letf (((symbol-function 'read-file-name)
+               (lambda (&rest _) (ert-fail "Unexpected file picker"))))
+      (should-error (whisper-file-better "/unused.mp4") :type 'user-error))
+    (should (equal whisper-model "small"))
+    (should (eq (symbol-function 'whisper-command) original-command))))
+
 ;;; whisper-target-tests.el ends here
