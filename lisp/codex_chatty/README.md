@@ -10,6 +10,8 @@ From the intended working Codex Ghostel buffer, press **C-c C-v** or run
 parallel. The transcript header changes to **Listening** when PCM capture starts.
 Press the same command again to stop recording and submit the complete Spanish
 utterance to Chatty. Chatty answers in concise English through Kokoro.
+The prompt asks for spoken descriptions of sources and files; exact URLs and
+paths belong in tool calls and working-Codex instructions.
 
 Use **C-c C-c** inside the transcript to record/stop. Starting a new recording
 during an answer stops its playback and interrupts the old Chatty turn.
