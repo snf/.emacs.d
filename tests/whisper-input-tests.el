@@ -65,6 +65,18 @@
     (should-not my/whisper--input-monitor-process)
     (should-not my/whisper--input-warning)))
 
+(ert-deftest whisper-input-monitor-can-follow-a-wrapped-capture-process ()
+  (let* ((process (make-pipe-process :name "wrapped-capture-test" :noquery t))
+         (whisper--recording-process process)
+         (whisper--ffmpeg-input-device "default")
+         (my/whisper--last-input-source "microphone"))
+    (unwind-protect
+        (progn
+          (process-put process 'whisper-input-pid 12345)
+          (should (equal (cadr (member "--recording-pid" (my/whisper--input-status-command)))
+                         "12345")))
+      (delete-process process))))
+
 (ert-deftest whisper-input-remembers-only-healthy-microphones-across-restarts ()
   (let* ((directory (make-temp-file "whisper-input-state-" t))
          (my/whisper--input-state-file (expand-file-name "input.json" directory))

@@ -1,0 +1,23 @@
+{
+  "date": "2026-11-03",
+  "unit_tests": 19,
+  "whisper_python_regression_tests": 14,
+  "ert_tests": 78,
+  "live_integration_tests": 10,
+  "passed": true,
+  "working_threads": "Disposable read-only targets only; no real working conversation received a test instruction.",
+  "audio": "Private Pulse sinks and muted default output; source fixture is Spanish Kokoro ef_dora. Production voice remains af_heart.",
+  "latency_note": "First PCM includes STT, LLM, and synthesis. It is not calibrated first audible speech at the physical speaker. Capture readiness uses a cold null-sink monitor.",
+  "pipeline_trials": [
+    {
+      "capture_ready_seconds": 2.085,
+      "stop_to_transcript_seconds": 2.788,
+      "stop_to_first_pcm_seconds": 6.316
+    },
+    {
+      "capture_ready_seconds": 2.085,
+      "stop_to_transcript_seconds": 1.968,
+      "stop_to_first_pcm_seconds": 3.937
+    }
+  ]
+}

@@ -11,6 +11,7 @@
 (require 'whisper)
 (require 'cl-lib)
 (require 'whisper-input)
+(require 'whisper-realtime)
 
 (declare-function codex-voice-cancel-dictation "codex-voice" ())
 
@@ -145,7 +146,9 @@ When nil, use ggml-silero-v6.2.0.bin in the Whisper installation's models direct
 
 (defun my/whisper--watch-recording-start (&rest _)
   "Schedule long-recording status after Whisper has started recording."
-  (when (whisper-recording-p)
+  (when (and (whisper-recording-p)
+             (or (not (my/whisper-realtime--p whisper--recording-process))
+                 (process-get whisper--recording-process 'whisper-input-pid)))
     (my/whisper--start-long-recording-timer)
     (my/whisper--start-input-monitor)))
 
@@ -243,17 +246,21 @@ that no partial follow-up is sent to Codex."
     ;; `interrupt-process' is Whisper's normal stop-and-transcribe action.
     ;; Deleting the FFmpeg process instead leaves its sentinel without a
     ;; completed recording event, so no partial audio is transcribed.
-    (delete-process whisper--recording-process)
+    (if (my/whisper-realtime--p whisper--recording-process)
+        (my/whisper-realtime--cancel whisper--recording-process)
+      (delete-process whisper--recording-process))
     (my/whisper--clear-target)
     (my/whisper--clear-long-recording-status)
     (message "Whisper recording cancelled"))
    (t
     (user-error "No Whisper recording is active"))))
 
-(defun my/whisper--start-or-stop (translate)
+(defun my/whisper--start-or-stop (translate &optional realtime)
   "Start a Whisper recording in the current buffer, or stop the active one.
-When TRANSLATE is non-nil, translate its output to English."
-  (let ((starting (not (or (whisper-recording-p) (whisper-transcribing-p)))))
+When TRANSLATE is non-nil, translate its output to English.
+When REALTIME is non-nil, decode in the background while recording."
+  (let ((my/whisper--realtime realtime)
+        (starting (not (or (whisper-recording-p) (whisper-transcribing-p)))))
     (if (not starting)
         (whisper-run)
       (my/whisper--check-input)
@@ -270,14 +277,24 @@ When TRANSLATE is non-nil, translate its output to English."
          (signal (car error-data) (cdr error-data)))))))
 
 (defun my/whisper-transcribe ()
-  "Toggle microphone transcription in the buffer where recording began."
+  "Transcribe the whole microphone recording after stopping.
+Invoke again to stop.  Insert only the completed transcript at the saved cursor."
   (interactive)
   (my/whisper--start-or-stop nil))
 
 (defun my/whisper-translate ()
-  "Toggle microphone translation in the buffer where recording began."
+  "Translate the whole microphone recording after stopping.
+Invoke again to stop.  Insert only the completed translation at the saved cursor."
   (interactive)
   (my/whisper--start-or-stop t))
+
+;;;###autoload
+(defun my/whisper-transcribe-realtime ()
+  "Decode microphone audio while recording, inserting only the final transcript.
+Invoke again to stop and finish the remaining audio.  Output stays hidden
+until complete, then is inserted at the saved cursor in the starting buffer."
+  (interactive)
+  (my/whisper--start-or-stop nil t))
 
 (defun whisper-file-better (file)
   "Transcribe FILE with Whisper Large v3 Q5_0 and Silero VAD.

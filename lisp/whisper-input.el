@@ -54,7 +54,9 @@
             (list "--expected-source" source))
           (if once '("--once")
             (list "--recording-pid"
-                  (number-to-string (process-id whisper--recording-process))))))
+                  (number-to-string
+                   (or (process-get whisper--recording-process 'whisper-input-pid)
+                       (process-id whisper--recording-process)))))))
 
 (defun my/whisper--check-input ()
   "Check microphone health before starting capture; warn without recording."

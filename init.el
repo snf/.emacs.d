@@ -1832,6 +1832,7 @@ This also works from a `markdown-table-display-mode' buffer."
 
 (use-package whisper
   :straight (:host github :repo "natrys/whisper.el" :files ("*.el"))
+  :commands (my/whisper-transcribe-realtime)
   :bind (("C-c w" . my/whisper-transcribe)
          ("C-c M-w" . my/whisper-translate))
   :config
@@ -2213,6 +2214,13 @@ See `find-name-arg' to customize the arguments."
   :load-path "lisp"
   :defer nil
   :bind (("C-c C-w" . codex-voice-dictate-followup)))
+
+(use-package codex-chatty
+  :straight nil
+  :ensure nil
+  :load-path "lisp"
+  :commands (codex-chatty codex-chatty-close)
+  :bind (("C-c C-v" . codex-chatty)))
 
 (use-package emacs-defunct-cleaner
   :straight nil

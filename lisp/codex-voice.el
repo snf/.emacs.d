@@ -21,11 +21,15 @@
 (declare-function whisper-run "whisper" (&optional arg))
 (declare-function whisper-command "whisper" (input-file))
 (declare-function whisper--setup-mode-line "whisper" (command phase))
+(declare-function my/whisper-realtime--p "whisper-realtime" (process))
+(declare-function my/whisper-realtime--stop "whisper-realtime" (process))
+(declare-function my/whisper-realtime--cancel "whisper-realtime" (process))
 
 (defvar whisper-after-transcription-hook nil)
 (defvar whisper-insert-text-at-point nil)
 (defvar whisper-translate nil)
 (defvar whisper--recording-process nil)
+(defvar my/whisper--realtime)
 ;; Do not assign this variable: when codex-voice loads before whisper.el,
 ;; assigning nil prevents Whisper from installing its default WAV path.
 (defvar whisper--temp-file)
@@ -311,7 +315,9 @@ When EXPECTED is non-nil, only release it if it is still the active capture."
       (codex-voice--clear-capture capture)
       (when-let ((process (plist-get capture :process)))
         (when (process-live-p process)
-          (delete-process process)))
+          (if (my/whisper-realtime--p process)
+              (my/whisper-realtime--cancel process)
+            (delete-process process))))
       (when (fboundp 'whisper--setup-mode-line)
         (whisper--setup-mode-line :hide 'recording)))))
 
@@ -336,6 +342,11 @@ When EXPECTED is non-nil, only release it if it is still the active capture."
   (when (eq (current-buffer) (plist-get codex-voice--capture :target))
     (codex-voice--cancel-capture codex-voice--capture)))
 
+(defun codex-voice--stream-released (process)
+  "Release PROCESS's microphone while its last transcription block finishes."
+  (codex-voice--clear-capture (process-get process 'codex-voice-capture))
+  (cl-pushnew process codex-voice--transcription-processes))
+
 (defun codex-voice--adopt-recording (capture)
   "Attach CAPTURE to the recording process just started by Whisper."
   (let ((process whisper--recording-process))
@@ -343,7 +354,15 @@ When EXPECTED is non-nil, only release it if it is still the active capture."
       (error "Whisper did not start an audio recording process"))
     (setf (plist-get capture :process) process)
     (process-put process 'codex-voice-capture capture)
-    (set-process-sentinel process #'codex-voice--recording-finished)
+    (if (my/whisper-realtime--p process)
+        (progn
+          (process-put process 'whisper-realtime-on-release #'codex-voice--stream-released)
+          (process-put process 'whisper-realtime-on-finish #'codex-voice--transcription-finished)
+          (process-put process 'codex-voice-error-buffer
+                       (process-get process 'whisper-realtime-logs))
+          (process-put process 'codex-voice-audio-file
+                       (process-get process 'whisper-realtime-audio)))
+      (set-process-sentinel process #'codex-voice--recording-finished))
     process))
 
 (defun codex-voice--run-whisper-for-capture (capture)
@@ -413,7 +432,9 @@ When EXPECTED is non-nil, only release it if it is still the active capture."
                         (with-current-buffer output-buffer
                           (string-trim (buffer-string)))))
            (exited-cleanly (and (eq (process-status process) 'exit)
-                               (= (process-exit-status process) 0)))
+                               (= (process-exit-status process) 0)
+                               (or (not (my/whisper-realtime--p process))
+                                   (process-get process 'whisper-realtime-complete))))
            (success (and exited-cleanly
                          (not (string-empty-p (or dictation ""))))))
       (unwind-protect
@@ -497,47 +518,64 @@ When EXPECTED is non-nil, only release it if it is still the active capture."
 (defun codex-voice-dictate-followup (&optional review)
   "Dictate and submit a context-aware follow-up to Codex.
 
-Invoke once to start recording and again to stop and transcribe.  Whisper keeps
-the current configured language and model.  The transcription is translated
-and organized in light of the last completed Codex message, then submitted to
-the originating Ghostel buffer.  With prefix argument REVIEW, reverse
-`codex-voice-submit-by-default' for this dictation."
+Invoke once to start recording and again to stop.  Whisper keeps the configured
+language and model, transcribing the whole recording after stopping.  The
+completed transcription is translated and organized in light of the last
+completed Codex message, then submitted to the originating Ghostel buffer.
+With prefix argument REVIEW, reverse `codex-voice-submit-by-default' for this
+dictation."
   (interactive "P")
-  (require 'whisper)
-  (cond
-   ((and codex-voice--capture (whisper-recording-p))
-    (interrupt-process (plist-get codex-voice--capture :process)))
-   ((or (whisper-recording-p) (whisper-transcribing-p))
-    (user-error "Whisper is busy with another transcription"))
-   (t
-    (codex-voice--clear-capture)
-    (let* ((target (current-buffer))
-           (_ (codex-voice--prepare-target target))
-           (_input (my/whisper--check-input))
-           (context (codex-voice--read-context target))
-           (submit (if review
-                       (not codex-voice-submit-by-default)
-                     codex-voice-submit-by-default))
-           (had-local-insert
-            (local-variable-p 'whisper-insert-text-at-point target))
-           (old-insert whisper-insert-text-at-point)
-           (had-local-translate
-            (local-variable-p 'whisper-translate target))
-           (old-translate whisper-translate)
-           (capture (codex-voice--install-capture target context submit)))
-      (unwind-protect
-          (progn
-            ;; Satisfy whisper.el's read-only-buffer check for terminals.  We
-            ;; adopt its FFmpeg process and transcribe the audio independently.
-            (setq-local whisper-insert-text-at-point nil)
-            (setq-local whisper-translate nil)
-            (codex-voice--run-whisper-for-capture capture))
-        (if had-local-insert
-            (setq-local whisper-insert-text-at-point old-insert)
-          (kill-local-variable 'whisper-insert-text-at-point))
-        (if had-local-translate
-            (setq-local whisper-translate old-translate)
-          (kill-local-variable 'whisper-translate)))))))
+  (codex-voice--dictate-followup review nil))
+
+;;;###autoload
+(defun codex-voice-dictate-followup-realtime (&optional review)
+  "Dictate a Codex follow-up using background transcription while recording.
+Invoke again to stop.  Keep the raw transcript hidden until complete, then
+format and submit it as usual.  REVIEW reverses automatic submission."
+  (interactive "P")
+  (codex-voice--dictate-followup review t))
+
+(defun codex-voice--dictate-followup (review realtime)
+  "Start or stop dictation with REVIEW and REALTIME selected by its command."
+  (require 'whisper-target)
+  (let ((my/whisper--realtime realtime))
+    (cond
+     ((and codex-voice--capture (whisper-recording-p))
+      (let ((process (plist-get codex-voice--capture :process)))
+        (if (my/whisper-realtime--p process)
+            (my/whisper-realtime--stop process)
+          (interrupt-process process))))
+     ((or (whisper-recording-p) (whisper-transcribing-p))
+      (user-error "Whisper is busy with another transcription"))
+     (t
+      (codex-voice--clear-capture)
+      (let* ((target (current-buffer))
+             (_ (codex-voice--prepare-target target))
+             (_input (my/whisper--check-input))
+             (context (codex-voice--read-context target))
+             (submit (if review
+                         (not codex-voice-submit-by-default)
+                       codex-voice-submit-by-default))
+             (had-local-insert
+              (local-variable-p 'whisper-insert-text-at-point target))
+             (old-insert whisper-insert-text-at-point)
+             (had-local-translate
+              (local-variable-p 'whisper-translate target))
+             (old-translate whisper-translate)
+             (capture (codex-voice--install-capture target context submit)))
+        (unwind-protect
+            (progn
+              ;; Satisfy whisper.el's read-only-buffer check for terminals.  Both
+              ;; processing modes keep raw text hidden until the final formatter.
+              (setq-local whisper-insert-text-at-point nil)
+              (setq-local whisper-translate nil)
+              (codex-voice--run-whisper-for-capture capture))
+          (if had-local-insert
+              (setq-local whisper-insert-text-at-point old-insert)
+            (kill-local-variable 'whisper-insert-text-at-point))
+          (if had-local-translate
+              (setq-local whisper-translate old-translate)
+            (kill-local-variable 'whisper-translate))))))))
 
 (provide 'codex-voice)
 
