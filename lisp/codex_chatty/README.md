@@ -34,6 +34,9 @@ automatically; inspect the working thread before asking to resend.
 
 ## Runtime
 
+For installation in a rebuilt development container, use the
+[pinned Kokoro Docker recipe and Emacs path settings](container-install.md).
+
 The existing Emacs-managed Codex app-server is reused. Chatty creates a separate
 ephemeral `gpt-6.1-terra` thread with `medium` effort, a read-only sandbox, native
 web search, bounded project read/search tools, and the fixed-target handoff tool.
