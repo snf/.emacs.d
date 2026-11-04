@@ -1,3 +1,5 @@
+;;; init.el --- Emacs configuration -*- lexical-binding: nil; -*-
+
 (defvar bootstrap-version)
 (let ((bootstrap-file
        (expand-file-name
