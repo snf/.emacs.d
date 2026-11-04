@@ -1838,11 +1838,10 @@ This also works from a `markdown-table-display-mode' buffer."
   :bind (("C-c w" . my/whisper-transcribe)
          ("C-c M-w" . my/whisper-translate))
   :config
-  (setq whisper-install-directory "/tmp/"
-        ;; Follow the microphone selected by the host's PulseAudio/PipeWire
-        ;; server.  Each Whisper recording starts a new FFmpeg stream and
-        ;; therefore resolves `default' again.
-        whisper--ffmpeg-input-format "pulse"
+  (setopt whisper-install-directory "/tmp/")
+  ;; Follow the microphone selected by the host's PulseAudio/PipeWire
+  ;; server.  Each Whisper recording resolves `default' again.
+  (setq whisper--ffmpeg-input-format "pulse"
         whisper--ffmpeg-input-device "default"
         ;; whisper-install-directory "~/.emacs.d/whisper/"
         ;; whisper-model "base"

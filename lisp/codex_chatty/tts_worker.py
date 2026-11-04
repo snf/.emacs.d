@@ -9,7 +9,7 @@ from pathlib import Path
 import sys
 import time
 
-from .common import CACHE, emit
+from .common import CACHE, emit, kokoro_paths
 
 
 class Params(C.Structure):
@@ -28,10 +28,16 @@ class Kokoro:
         # Must precede even backend enumeration. This worker owns its GGML state.
         os.environ['GGML_VK_ALLOW_GRAPHICS_QUEUE'] = '1'
         os.environ['KOKORO_SEED'] = str(config.get('seed', 42))
-        deps = CACHE / 'deps/root/usr/lib/x86_64-linux-gnu'
-        os.environ.setdefault('KOKORO_ESPEAK_DATA_PATH', str(deps))
-        library = config.get('library', str(CACHE / 'kokoro.cpp/build/libkokoro.so'))
-        self.lib = lib = C.CDLL(library)
+        self.paths = kokoro_paths(config)
+        library = Path(self.paths['library'])
+        data_parents = [library.parent.parent]
+        if library.is_relative_to(CACHE):
+            data_parents.append(CACHE/'deps/root/usr/lib/x86_64-linux-gnu')
+        for parent in data_parents:
+            if (parent/'espeak-ng-data').is_dir():
+                os.environ.setdefault('KOKORO_ESPEAK_DATA_PATH', str(parent))
+                break
+        self.lib = lib = C.CDLL(str(library))
         lib.kokoro_context_default_params.restype = Params
         lib.kokoro_init_from_file.argtypes = [C.c_char_p, Params]
         lib.kokoro_init_from_file.restype = C.c_void_p
@@ -50,11 +56,11 @@ class Kokoro:
         params.device = config.get('device', 0)
         params.length_scale = 1 / config.get('speed', 1.526)
         self.context = lib.kokoro_init_from_file(
-            str(config.get('model', CACHE/'models/kokoro-cpp/kokoro-82m-f16.gguf')).encode(), params)
+            self.paths['model'].encode(), params)
         if not self.context:
             raise RuntimeError(lib.kokoro_last_error().decode())
         try:
-            voice = str(config.get('voice', CACHE/'models/kokoro-cpp/kokoro-voice-af_heart.gguf'))
+            voice = self.paths['voice']
             if lib.kokoro_load_voice_pack(self.context, voice.encode()) != 0:
                 raise RuntimeError(lib.kokoro_last_error().decode())
             if lib.kokoro_backend_name(self.context) != b'Vulkan':
@@ -97,7 +103,7 @@ def main():
         model = Kokoro(config)
         model.synthesize('The voice conversation is ready.')  # Silent warmup.
         emit('ready', backend='Vulkan', sample_rate=24000,
-             warmup_seconds=time.monotonic() - started)
+             warmup_seconds=time.monotonic() - started, **model.paths)
         for line in sys.stdin:
             request = json.loads(line)
             if request.get('command') == 'close':

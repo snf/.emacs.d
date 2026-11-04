@@ -10,7 +10,7 @@ import unittest
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]/'lisp'))
-from codex_chatty.common import PhraseBuffer
+from codex_chatty.common import PhraseBuffer, kokoro_paths
 from codex_chatty.controller import Controller
 from codex_chatty.rpc import RPCError, discussion_config
 from codex_chatty.tools import ProjectReads
@@ -111,6 +111,24 @@ class ReadTests(unittest.TestCase):
             self.assertTrue(result['truncated'])
             self.assertLessEqual(len(result['matches']), 24000)
             with self.assertRaises(ValueError): ProjectReads(root).search({'query': '['})
+
+
+class RuntimePathsTests(unittest.TestCase):
+    def test_container_installation_takes_priority_over_legacy_cache(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory)/'system';cache=Path(directory)/'cache'
+            with patch('codex_chatty.common.SYSTEM_KOKORO',root),patch('codex_chatty.common.CACHE',cache):
+                self.assertEqual(kokoro_paths({})['library'],str(cache/'kokoro.cpp/build/libkokoro.so'))
+                (root/'build').mkdir(parents=True)
+                (root/'build/libkokoro.so').touch()
+                paths=kokoro_paths({})
+                self.assertEqual(paths['library'],str(root/'build/libkokoro.so'))
+                self.assertEqual(paths['model'],str(root/'models/kokoro-82m-f16.gguf'))
+                self.assertEqual(paths['voice'],str(root/'models/kokoro-voice-af_heart.gguf'))
+
+    def test_explicit_runtime_paths_override_automatic_selection(self):
+        paths={'library':'/custom/libkokoro.so','model':'/custom/model.gguf','voice':'/custom/voice.gguf'}
+        self.assertEqual(kokoro_paths(paths),paths)
 
 
 class ControllerTests(unittest.IsolatedAsyncioTestCase):

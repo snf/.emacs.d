@@ -296,39 +296,40 @@ until complete, then is inserted at the saved cursor in the starting buffer."
   (interactive)
   (my/whisper--start-or-stop nil t))
 
-(defun whisper-file-better (file)
-  "Transcribe FILE with Whisper Large v3 Q5_0 and Silero VAD.
-Use the usual file picker and output handling without changing the model
-used by `whisper-file' or microphone dictation."
-  (interactive "fMedia file: ")
-  (when (or (whisper-recording-p) (whisper-transcribing-p)
-            (and (buffer-live-p whisper--compilation-buffer)
-                 (process-live-p (get-buffer-process whisper--compilation-buffer))))
-    (user-error "Whisper is busy; finish or cancel the current job first"))
-  (let* ((models (or my/whisper-better-model-directory
-                     (expand-file-name "whisper.cpp/models"
-                                       whisper-install-directory)))
-         (model (expand-file-name "ggml-large-v3-q5_0.bin" models))
-         (original-command (symbol-function 'whisper-command))
-         (command (lambda (input-file)
-                    (let ((args (funcall original-command input-file)))
-                      (setf (cadr (member "--model" args)) model)
-                      args)))
-         (run (lambda (function &rest args)
-                (let ((whisper-install-whispercpp nil)
-                      (whisper-server-mode nil))
-                  (cl-letf (((symbol-function 'whisper-command) command))
-                    (apply function args)))))
-         (previous-process whisper--recording-process))
-    (unless (file-readable-p model)
-      (user-error "Whisper Better model is missing or unreadable: %s" model))
-    (unless (file-readable-p file)
-      (user-error "Media file is missing or unreadable: %s" file))
-    (funcall run #'whisper-run (expand-file-name file))
-    ;; Reapply this job's overrides when FFmpeg finishes converting the file.
-    (when (and (processp whisper--recording-process)
-               (not (eq whisper--recording-process previous-process)))
-      (add-function :around (process-sentinel whisper--recording-process) run))))
+;; Optional Large v3 file transcription (disabled for now).
+;; (defun whisper-file-better (file)
+;;   "Transcribe FILE with Whisper Large v3 Q5_0 and Silero VAD.
+;; Use the usual file picker and output handling without changing the model
+;; used by `whisper-file' or microphone dictation."
+;;   (interactive "fMedia file: ")
+;;   (when (or (whisper-recording-p) (whisper-transcribing-p)
+;;             (and (buffer-live-p whisper--compilation-buffer)
+;;                  (process-live-p (get-buffer-process whisper--compilation-buffer))))
+;;     (user-error "Whisper is busy; finish or cancel the current job first"))
+;;   (let* ((models (or my/whisper-better-model-directory
+;;                      (expand-file-name "whisper.cpp/models"
+;;                                        whisper-install-directory)))
+;;          (model (expand-file-name "ggml-large-v3-q5_0.bin" models))
+;;          (original-command (symbol-function 'whisper-command))
+;;          (command (lambda (input-file)
+;;                     (let ((args (funcall original-command input-file)))
+;;                       (setf (cadr (member "--model" args)) model)
+;;                       args)))
+;;          (run (lambda (function &rest args)
+;;                 (let ((whisper-install-whispercpp nil)
+;;                       (whisper-server-mode nil))
+;;                   (cl-letf (((symbol-function 'whisper-command) command))
+;;                     (apply function args)))))
+;;          (previous-process whisper--recording-process))
+;;     (unless (file-readable-p model)
+;;       (user-error "Whisper Better model is missing or unreadable: %s" model))
+;;     (unless (file-readable-p file)
+;;       (user-error "Media file is missing or unreadable: %s" file))
+;;     (funcall run #'whisper-run (expand-file-name file))
+;;     ;; Reapply this job's overrides when FFmpeg finishes converting the file.
+;;     (when (and (processp whisper--recording-process)
+;;                (not (eq whisper--recording-process previous-process)))
+;;       (add-function :around (process-sentinel whisper--recording-process) run))))
 
 (provide 'whisper-target)
 ;;; whisper-target.el ends here

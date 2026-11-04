@@ -48,9 +48,9 @@ Initial context comes from `codex-voice--read-context`: the last saved user and
 assistant exchange, capped at 16,384 characters per field, with its existing
 terminal fallback. Chatty retains its own history until closure.
 
-Python needs `websockets` (tested with 17.0.1). The default command reuses
-`codex-app-server-python-command`, currently `uv run --project /projects/takopi
-python`; there is no second service to start. Override
+Python needs `websockets` (tested with 17.4 and Python 3.15.2 in the rebuilt
+container). The command reuses `codex-app-server-python-command`, which runs
+Python in an isolated uv environment with `websockets>=15.0.1`. Override
 `codex-chatty-python-command` with another Python command prefix if needed.
 
 Whisper reuses the configured local whisper.cpp server, Spanish small model,
@@ -58,6 +58,11 @@ Silero VAD, and microphone selection. Its backend stays warm across recordings.
 Chatty decodes incrementally every two seconds with a 30-second window and
 three-second overlap. Only manual stop authorizes an utterance; unexpected
 capture EOF leaves an unsent draft. Original dictation settings are unaffected.
+The container installation is `/tmp/whisper.cpp`, including both the small and
+Silero models. Set `whisper-install-directory` with `setopt` so Whisper also
+updates its internal executable directory. A nil saved VAD override uses the
+installed Silero model. The optional `whisper-file-better` Large v3 command is
+commented out for now; its implementation remains in `whisper-target.el`.
 
 On this host, capture and playback use `pacat` through
 `PULSE_SERVER=unix:/run/host-pulse/native`. Pulse capture is 16 kHz mono PCM;
@@ -67,16 +72,20 @@ the input fallback and supports file/non-Pulse input. Output falls back to
 FFmpeg Pulse or `pw-cat`, depending on the environment. The standalone PipeWire
 client cannot reach an audio daemon in the current environment.
 
-Kokoro uses the existing research cache under
-`~/.cache/codex-chatty-tts/`:
+Kokoro automatically prefers the container installation under `/opt/kokoro.cpp`.
+Explicit `codex-chatty-tts-options` paths override that selection. Its ready event
+reports the library, model, and voice paths actually loaded.
 
 | Asset | Relative path |
 | --- | --- |
-| Pinned native library | `kokoro.cpp/build/libkokoro.so` |
-| F16 model | `models/kokoro-cpp/kokoro-82m-f16.gguf` |
-| English voice | `models/kokoro-cpp/kokoro-voice-af_heart.gguf` |
-| Native dependencies and phonemizer data | `deps/root/usr/lib/x86_64-linux-gnu/` |
-| Cached Pulse tools | `deps/root/usr/bin/` |
+| Pinned native library | `build/libkokoro.so` |
+| F16 model | `models/kokoro-82m-f16.gguf` |
+| English voice | `models/kokoro-voice-af_heart.gguf` |
+| Phonemizer data | `espeak-ng-data/`, linked to the system package |
+
+The old `~/.cache/codex-chatty-tts/` layout remains a fallback when the container
+runtime is absent. Its dependency libraries are injected only when using a
+library from that cache; container installations use their system dependencies.
 
 The runtime is `simonfxr/kokoro.cpp` at
 `a9e31430838c8bdc3d4beaaab62753681b9f7839`. It explicitly selects Vulkan device
@@ -109,11 +118,11 @@ After an accepted handoff, playback errors leave the receipt intact.
 Run the controller tests with the configured Python environment:
 
 ```sh
-/projects/takopi/.venv/bin/python -m unittest discover -s tests -p test_codex_chatty.py -v
-CODEX_CHATTY_LIVE=1 PYTHONPATH=tests /projects/takopi/.venv/bin/python -m unittest test_codex_chatty_live -v
+uv run --isolated --no-project --with 'websockets>=15.0.1' python -m unittest discover -s tests -p test_codex_chatty.py -v
+CODEX_CHATTY_LIVE=1 uv run --isolated --no-project --with 'websockets>=15.0.1' python -m unittest discover -s tests -p test_codex_chatty_live.py -v
 ```
 
-The opt-in tests require the running Emacs/app-server, GPU/cache, local Whisper
+The opt-in tests require the running Emacs/app-server, GPU/Kokoro, local Whisper
 models, and host PulseAudio. They use disposable read-only target threads,
 private null sinks for Spanish fixture capture/output, and muted default-device
 playback. They exercise the real Emacs adapter, routing, file reads, busy
@@ -125,8 +134,10 @@ load paths. Existing voice/Whisper regression suites should run in separate
 Emacs processes with Whisper modules loaded first, matching the live setup.
 This avoids their existing cross-suite global/advice-state interference.
 
-The full output capture, Spanish fixture, transcript, and timing events are in
-[`tts-samples/2026-11-03/implementation-validation/`](../../tts-samples/2026-11-03/implementation-validation/).
+The rebuilt-container report, output capture, transcripts, and timing events are in
+[`tts-samples/2026-11-04/container-validation/`](../../tts-samples/2026-11-04/container-validation/).
+Subsequent live-test runs save evidence under the current date. The original
+Spanish fixture remains under `tts-samples/2026-11-03/implementation-validation/`.
 The report and summary are versioned; recordings and logs stay local. These
 captures preserve silence while waiting for STT/LLM/TTS and actual playback timing.
 The only remaining subjective check is the user's microphone and listening

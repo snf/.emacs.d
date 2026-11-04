@@ -1,0 +1,61 @@
+{
+  "date": "2026-11-04",
+  "tests": {
+    "chatty_unit": 21,
+    "whisper_python": 14,
+    "ert": 77,
+    "live_integration": 10
+  },
+  "additional_checks": {
+    "real_emacs_record_stop_to_playback": true,
+    "english_tts_recognized_by_whisper": true
+  },
+  "tts_runtime": {
+    "backend": "Vulkan",
+    "library": "/opt/kokoro.cpp/build/libkokoro.so",
+    "model": "/opt/kokoro.cpp/models/kokoro-82m-f16.gguf",
+    "voice": "/opt/kokoro.cpp/models/kokoro-voice-af_heart.gguf",
+    "warmup_seconds": 3.4671780180651695
+  },
+  "whisper": {
+    "server": "/tmp/whisper.cpp/build/bin/whisper-server",
+    "model": "/tmp/whisper.cpp/models/ggml-small.bin",
+    "vad_model": "/tmp/whisper.cpp/models/ggml-silero-v6.2.0.bin",
+    "threads": 4,
+    "input_format": "pulse",
+    "input_device": "default",
+    "step": 2,
+    "window": 30,
+    "overlap": 3
+  },
+  "pipeline_trials": [
+    {
+      "stop_to_transcript_seconds": 2.751,
+      "stop_to_first_pcm_seconds": 9.552
+    },
+    {
+      "stop_to_transcript_seconds": 2.037,
+      "stop_to_first_pcm_seconds": 5.455
+    }
+  ],
+  "model_worker_reuse": true,
+  "audio_test_sources": "Private PulseAudio null sinks, Spanish fixture; default output tested muted. No physical microphone audio recorded.",
+  "optional_large_model_in_image": false,
+  "note": "First PCM includes STT and LLM time and is not calibrated first audible word time at the physical speaker.",
+  "skipped_tests": [
+    "whisper-target-better-missing-model-leaves-defaults-alone",
+    "whisper-target-better-survives-conversion-without-changing-defaults"
+  ],
+  "disabled_command": "whisper-file-better (implementation retained as comments; undefined in the running Emacs)",
+  "passed_test_count": 122,
+  "tts_english_roundtrip_word_recovery": 0.8253968253968254,
+  "commit_snapshot_validation": {
+    "chatty_unit": 21,
+    "whisper_python": 14,
+    "ert": 76,
+    "live_integration": 10,
+    "passed": 121,
+    "skipped": 2,
+    "excluded": "Separate proxy logging changes and their regression test remain uncommitted."
+  }
+}

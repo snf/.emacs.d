@@ -3,11 +3,12 @@ import asyncio
 import base64
 import json
 import os
+from pathlib import Path
 import sys
 import time
 import uuid
 
-from .common import CACHE, ENTRY, child_setup, pulse_client, stop_process
+from .common import CACHE, ENTRY, child_setup, kokoro_paths, pulse_client, stop_process
 
 
 def playback_command(config):
@@ -48,8 +49,9 @@ class Speech:
             self.ready.set_result(None)
         else:
             env = os.environ.copy()
-            deps = str(CACHE/'deps/root/usr/lib/x86_64-linux-gnu')
-            env['LD_LIBRARY_PATH'] = deps + (':'+env['LD_LIBRARY_PATH'] if env.get('LD_LIBRARY_PATH') else '')
+            deps = CACHE/'deps/root/usr/lib/x86_64-linux-gnu'
+            if Path(kokoro_paths(self.config)['library']).is_relative_to(CACHE) and deps.is_dir():
+                env['LD_LIBRARY_PATH'] = str(deps) + (':'+env['LD_LIBRARY_PATH'] if env.get('LD_LIBRARY_PATH') else '')
             env['GGML_VK_ALLOW_GRAPHICS_QUEUE'] = '1'
             self.process = await asyncio.create_subprocess_exec(
                 sys.executable, str(ENTRY), '--tts-worker', stdin=asyncio.subprocess.PIPE,

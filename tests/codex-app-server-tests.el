@@ -78,7 +78,8 @@
                  '("python3" "/projects/takopi/scripts/mobile_stack.py"
                    "start")))
   (should (equal codex-app-server-python-command
-                 '("uv" "run" "--project" "/projects/takopi" "python")))
+                 '("uv" "run" "--isolated" "--no-project"
+                   "--with" "websockets>=15.0.1" "python")))
   (should-not
    (seq-some (lambda (argument) (string-match-p "/\\.venv/" argument))
              (append codex-app-server-start-command

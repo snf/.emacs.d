@@ -8,8 +8,21 @@ import signal
 import shutil
 
 CACHE = Path.home() / '.cache/codex-chatty-tts'
+SYSTEM_KOKORO = Path('/opt/kokoro.cpp')
 ENTRY = Path(__file__).resolve().parent.parent / 'codex-chatty.py'
 PARENT_PID = os.getpid()
+
+
+def kokoro_paths(config):
+    """Prefer the container installation; retain explicit and legacy paths."""
+    installed = (SYSTEM_KOKORO/'build/libkokoro.so').is_file()
+    source = SYSTEM_KOKORO if installed else CACHE/'kokoro.cpp'
+    models = SYSTEM_KOKORO/'models' if installed else CACHE/'models/kokoro-cpp'
+    return {key:str(config.get(key, default)) for key,default in {
+        'library': source/'build/libkokoro.so',
+        'model': models/'kokoro-82m-f16.gguf',
+        'voice': models/'kokoro-voice-af_heart.gguf',
+    }.items()}
 
 
 def pulse_client():

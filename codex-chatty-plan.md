@@ -4,6 +4,15 @@ Status: implemented and tested; enabled in the current Emacs session
 
 Date: 2026-11-03
 
+Container validation update (2026-11-04): Chatty now automatically selects the
+installed Kokoro runtime and models under `/opt/kokoro.cpp`. Whisper's executable
+path is synchronized with `/tmp/whisper.cpp` using its Custom setter, and Silero
+uses the installed model. The optional `whisper-file-better` command is commented
+out at the user's request. The rebuilt container passed 122 enabled-feature
+tests with two intentional skips, plus a full Emacs voice turn and English
+speech round-trip check. See the
+[container report](tts-samples/2026-11-04/container-validation/README.md).
+
 Add an Emacs command that opens a conversational Codex assistant alongside the
 selected working Codex conversation. The user starts and stops each recording.
 Chatty transcribes Spanish, discusses the working conversation in concise spoken

@@ -6,9 +6,11 @@ is used. Private PulseAudio sinks prevent capturing unrelated system audio.
 """
 import asyncio
 from contextlib import suppress
+from datetime import date
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -23,10 +25,27 @@ from codex_chatty.controller import Controller
 from codex_chatty.rpc import RPC, RPCError, discussion_config
 from codex_chatty.tools import function, tool_result
 from codex_chatty.audio import Speech, playback_command
-from codex_chatty.common import CACHE, stop_process
+from codex_chatty.common import CACHE, kokoro_paths, stop_process
 
-PULSE = CACHE/'deps/root/usr/bin'
+EVIDENCE = Path(__file__).resolve().parents[1]/'tts-samples'/date.today().isoformat()/'container-validation'
 ENABLED = os.getenv('CODEX_CHATTY_LIVE') == '1'
+
+
+def audio_tool(name):
+    return shutil.which(name) or str(CACHE/'deps/root/usr/bin'/name)
+
+
+def emacs_settings():
+    expression='''(progn (require 'codex-chatty)
+      (json-encode `((whisper . ,(codex-chatty--whisper-config))
+                     (tts . ,(or codex-chatty-tts-options (make-hash-table)))
+                     (whisper_setup . ,(prin1-to-string
+                       `(progn (require 'whisper-target)
+                          (setopt whisper-install-directory ,whisper-install-directory)
+                          (setq whisper-model ,whisper-model whisper-language ,whisper-language
+                                whisper-use-threads ,whisper-use-threads
+                                my/whisper-silero-model-file ,my/whisper-silero-model-file))))))))'''
+    return json.loads(json.loads(subprocess.check_output(['emacsclient','--eval',expression],text=True)))
 
 
 async def until(predicate, timeout=90):
@@ -157,8 +176,8 @@ class LiveTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_emacs_adapter_runs_real_controller_and_renders_response(self):
         repository=Path(__file__).resolve().parents[1]
-        evidence=repository/'tts-samples/2026-11-03/implementation-validation'
-        evidence.mkdir(exist_ok=True)
+        evidence=EVIDENCE
+        evidence.mkdir(parents=True,exist_ok=True)
         lisp=lambda value:json.dumps(str(value),ensure_ascii=False)
         # Reproduce the live Emacs package paths without relying on a /tmp file
         # created by an earlier manual test run.
@@ -171,21 +190,16 @@ class LiveTests(unittest.IsolatedAsyncioTestCase):
         script=self.root/'emacs-live-test.el'
         script.write_text(''';;; -*- lexical-binding: t; -*-
 (require 'codex-chatty)
+'''+emacs_settings()['whisper_setup']+'''
 (unless (fboundp 'ghostel-mode) (define-derived-mode ghostel-mode fundamental-mode "Ghostel"))
 (let* ((codex-chatty-record-on-open nil)
-       (codex-chatty-python-command (list '''+lisp(sys.executable)+'''))
        (codex-chatty-tts-options
          (let ((json-object-type 'alist) (json-array-type 'vector) (json-key-type 'symbol))
-           (json-read-from-string '''+lisp(json.dumps({'player_command':player}))+''')))
+           (json-read-from-string '''+lisp(json.dumps(dict(emacs_settings()['tts'],player_command=player)))+''')))
        (codex-attn-providers '((codex :buffer-prefix "*codex: ")))
        (target (generate-new-buffer "*codex: chatty-adapter-test*")))
   (unwind-protect
-      (cl-letf (((symbol-function 'codex-app-server-ensure) (lambda (ready &rest _) (funcall ready)))
-                ((symbol-function 'codex-chatty--whisper-config)
-                 (lambda () '((server . "/tmp/whisper.cpp/build/bin/whisper-server")
-                              (model . "/tmp/whisper.cpp/models/ggml-small.bin")
-                              (vad_model . "/projects/transcribe/.local-asr-research/models/ggml-silero-v6.2.0.bin")
-                              (input_format . "lavfi") (input_device . "anullsrc=r=16000:cl=mono:d=0.1")))))
+      (cl-letf (((symbol-function 'codex-app-server-ensure) (lambda (ready &rest _) (funcall ready))))
         (with-current-buffer target
           (ghostel-mode)
           (setq-local default-directory '''+lisp(str(self.root)+'/')+''')
@@ -249,7 +263,7 @@ class LiveTests(unittest.IsolatedAsyncioTestCase):
         recording=None
         try:
             for name in names:
-                p=await asyncio.create_subprocess_exec(str(PULSE/'pactl'),'load-module','module-null-sink',
+                p=await asyncio.create_subprocess_exec(audio_tool('pactl'),'load-module','module-null-sink',
                     'sink_name='+name,stdout=asyncio.subprocess.PIPE,stderr=asyncio.subprocess.PIPE)
                 out,err=await p.communicate()
                 if p.returncode:raise RuntimeError(err.decode())
@@ -257,26 +271,22 @@ class LiveTests(unittest.IsolatedAsyncioTestCase):
             fixture=Path(__file__).resolve().parents[1]/'tts-samples/2026-11-03/implementation-validation/spanish-input.wav'
             if not fixture.is_file():
                 fixture=self.root/'spanish.wav'
-                env=os.environ.copy();deps=str(CACHE/'deps/root/usr/lib/x86_64-linux-gnu')
-                env['LD_LIBRARY_PATH']=deps;env['ESPEAK_DATA_PATH']=deps
-                subprocess.run([str(PULSE/'espeak-ng'),'-v','es','-s','155','-w',str(fixture),
-                                'No envíes ningún mensaje. Explica la última respuesta en inglés.'],env=env,check=True)
+                subprocess.run([audio_tool('espeak-ng'),'-v','es','-s','155','-w',str(fixture),
+                                'No envíes ningún mensaje. Explica la última respuesta en inglés.'],check=True)
             recording=raw_path.open('wb')
-            capture=await asyncio.create_subprocess_exec(str(PULSE/'pacat'),'--record','--raw',
+            capture=await asyncio.create_subprocess_exec(audio_tool('pacat'),'--record','--raw',
                 '--format=s16le','--rate=24000','--channels=1','--latency-msec=20',
                 '--device='+names[1]+'.monitor',stdout=recording,stderr=asyncio.subprocess.DEVNULL)
-            whisper=dict(server='/tmp/whisper.cpp/build/bin/whisper-server',
-                         model='/tmp/whisper.cpp/models/ggml-small.bin',
-                         vad_model='/projects/transcribe/.local-asr-research/models/ggml-silero-v6.2.0.bin',
-                         input_format='pulse',input_device='default',threads=4,step=2,window=30,overlap=3)
+            settings=emacs_settings()
+            whisper=dict(settings['whisper'],input_format='pulse',input_device='default')
             player=playback_command({})+['--device='+names[1]]
             # Exercise real default-source semantics safely with a private source.
             with patch.dict(os.environ,{'PULSE_SOURCE':names[0]+'.monitor'}):
-                c=await self.make_controller(auto_record=True,whisper=whisper,tts={'player_command':player})
+                c=await self.make_controller(auto_record=True,whisper=whisper,tts=dict(settings['tts'],player_command=player))
             async def speak_fixture():
                 capture_id=c.capture_id
                 await until(lambda:any(e=='capture-ready' and k.get('capture_id')==capture_id for e,k in self.events),10)
-                p=await asyncio.create_subprocess_exec(str(PULSE/'paplay'),'--device='+names[0],str(fixture))
+                p=await asyncio.create_subprocess_exec(audio_tool('paplay'),'--device='+names[0],str(fixture))
                 self.assertEqual(await p.wait(),0)
                 await asyncio.sleep(.2)
                 await c.command({'command':'stop_recording'})
@@ -289,6 +299,8 @@ class LiveTests(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(any(e=='assistant-complete' for e,k in self.events))
             self.assertTrue(any(e=='audio-chunk' for e,k in self.events))
             self.assertFalse(any(e=='handoff' for e,k in self.events))
+            ready=await asyncio.shield(c.speech.ready)
+            self.assertEqual({key:ready[key] for key in ('library','model','voice')},kokoro_paths(settings['tts']))
             whisper_pid=c.stt.server.pid;tts_pid=c.speech.process.pid
             start=len(self.events)
             with patch.dict(os.environ,{'PULSE_SOURCE':names[0]+'.monitor'}):
@@ -301,16 +313,17 @@ class LiveTests(unittest.IsolatedAsyncioTestCase):
             import array
             values=array.array('h',raw_path.read_bytes())
             self.assertGreater(max(abs(x) for x in values),500)
-            evidence=Path(__file__).resolve().parents[1]/'tts-samples/2026-11-03/implementation-validation'
-            evidence.mkdir(exist_ok=True)
+            evidence=EVIDENCE
+            evidence.mkdir(parents=True,exist_ok=True)
             with wave.open(str(evidence/'full-pipeline-output.wav'),'wb') as wav:
                 wav.setnchannels(1);wav.setsampwidth(2);wav.setframerate(24000);wav.writeframes(values.tobytes())
             (evidence/'full-pipeline-events.json').write_text(json.dumps(self.events,indent=2,ensure_ascii=False))
+            (evidence/'speech-runtime.log').write_text(c.log_path.read_text())
         finally:
             await stop_process(capture)
             if recording:recording.close()
             for module in reversed(modules):
-                p=await asyncio.create_subprocess_exec(str(PULSE/'pactl'),'unload-module',module)
+                p=await asyncio.create_subprocess_exec(audio_tool('pactl'),'unload-module',module)
                 await p.wait()
 
 

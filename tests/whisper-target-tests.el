@@ -152,6 +152,7 @@
 
 (ert-deftest whisper-target-better-survives-conversion-without-changing-defaults ()
   "Delayed conversion uses Large/Silero; the next ordinary file uses Small."
+  (skip-unless (fboundp 'whisper-file-better))
   (let* ((directory (make-temp-file "whisper-better-test-" t))
          (my/whisper-better-model-directory directory)
          (my/whisper-silero-model-file
@@ -241,6 +242,7 @@
 
 (ert-deftest whisper-target-better-missing-model-leaves-defaults-alone ()
   "Missing Better weights fail before prompting and keep Small available."
+  (skip-unless (fboundp 'whisper-file-better))
   (let ((my/whisper-better-model-directory "/missing-whisper-better-models/")
         (whisper-model "small")
         (whisper--compilation-buffer nil)

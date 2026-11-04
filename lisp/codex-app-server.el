@@ -56,8 +56,12 @@ independent of the global Codex on PATH and contains no release number."
   :type 'string)
 
 (defcustom codex-app-server-python-command
-  '("uv" "run" "--project" "/projects/takopi" "python")
-  "Command prefix for Python programs that need Takopi's dependencies."
+  '("uv" "run" "--isolated" "--no-project"
+    "--with" "websockets>=15.0.1" "python")
+  "Command prefix for Python helpers that need the websockets package.
+
+Use an isolated environment so starting a helper does not sync Takopi or
+the current project's dependencies."
   :type '(repeat string))
 
 (defcustom codex-app-server-proxy-script

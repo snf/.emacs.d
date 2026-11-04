@@ -1,9 +1,9 @@
 # Kokoro installation in the development container
 
-Add this block after the supplied Whisper installation, while the Docker build
-runs as root. It reuses Whisper's Vulkan headers, Mesa drivers, shader compiler,
-and CMake. The installed runtime and model files live under `/opt/kokoro.cpp`.
-The actual Dockerfile is outside this workspace and has not been edited.
+Place the Kokoro build and model steps after Whisper in the existing root
+section. Merge missing packages into the shared dependency list, reusing the
+installed compiler, Git, curl, pkg-config, CMake and Vulkan tools. The expanded
+reference below installs the runtime and models under `/opt/kokoro.cpp`.
 
 ```dockerfile
 # Kokoro dependencies in addition to the existing Whisper/Vulkan packages.
@@ -60,8 +60,8 @@ host PulseAudio connection. Retain the current container's audio socket and GPU
 device access. Model loading and synthesis happen at container runtime; the
 image build does not require access to the physical GPU.
 
-After rebuilding the container, configure the existing Chatty Emacs integration
-to use the installed files (for example in the `codex-chatty` use-package stanza):
+Chatty now discovers the installed files automatically. Explicit paths remain
+available when needed (for example in the `codex-chatty` use-package stanza):
 
 ```elisp
 :custom
@@ -71,25 +71,27 @@ to use the installed files (for example in the `codex-chatty` use-package stanza
    (voice . "/opt/kokoro.cpp/models/kokoro-voice-af_heart.gguf")))
 ```
 
-Apply those settings when deploying the image containing these paths. The
-current Emacs session continues using the already tested local assets until
-then. All installed files only need to be readable by the Emacs user.
+No explicit path settings are required for this image. The runtime automatically
+prefers `/opt/kokoro.cpp` and reports the loaded paths in its ready event. All
+installed files only need to be readable by the Emacs user.
 
 The worker already selects Vulkan device 0, sets
 `GGML_VK_ALLOW_GRAPHICS_QUEUE=1` before GPU initialization, keeps Kokoro warm,
 and uses the approved native `length_scale=1/1.526`. These settings belong to
 the Kokoro worker; no global Vulkan queue environment change is needed.
 
-The existing Python command also needs `websockets`, already present in the
-Takopi environment. This block installs the native speech runtime and audio
-utilities; it does not change that Python environment.
+The Python command also needs `websockets`; the configured isolated uv command
+provides it. This block installs the native speech runtime and audio utilities.
 
 Validation in this session: inspected the pinned CMake options and native API;
 matched both local model SHA-256 values to the publisher's pinned Hugging Face
 metadata; checked the shell syntax and Emacs settings; exercised the actual GPU
-worker with explicitly configured library/model/voice paths. A complete Docker
-image build has not been run: Docker and Podman are unavailable here, and the
-actual Dockerfile is outside the workspace.
+worker with explicitly configured library/model/voice paths. The supplied
+Dockerfile copy also passes parsing, shell syntax checks for all 38 RUN steps,
+and checks for root installation, preserved user transitions and unique shared
+speech package entries. After the user rebuilt the image, the installed
+container passed the full STT/Codex/TTS tests on 2026-11-04; see the
+[container validation report](../../tts-samples/2026-11-04/container-validation/README.md).
 
 Sources: [pinned runtime build configuration](https://github.com/simonfxr/kokoro.cpp/blob/a9e31430838c8bdc3d4beaaab62753681b9f7839/CMakeLists.txt),
 [pinned model publisher metadata](https://huggingface.co/api/models/simonfxr/kokoro.cpp-GGUF/revision/c64650d0950e0b718b6eeb2f18620e25daf5c90b?blobs=true).

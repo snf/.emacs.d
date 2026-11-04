@@ -1,0 +1,365 @@
+ARG BASE_IMAGE=debian:trixie
+FROM $BASE_IMAGE AS build
+
+ARG BUMPBUILD=14
+
+ENV USER="core" \
+    UID=1000 \
+    TZ=UTC
+
+RUN printf "deb-src http://httpredir.debian.org/debian trixie main non-free\ndeb http://deb.debian.org/debian trixie-backports main\n" > /etc/apt/sources.list.d/emacs-build.list
+RUN apt-get update && apt-get upgrade -y
+
+ENV LANG=en_US.UTF-8 \
+    LANGUAGE=en_US.UTF-8 \
+    LC_ALL=C.UTF-8 \
+    DEBIAN_FRONTEND=noninteractive \
+    EMACS_BUILD_TOOLS="wget \
+                       xz-utils \
+                       gnupg \
+#                       software-properties-common \
+                       equivs \
+                       devscripts \
+                       autoconf \
+                       make \
+                       pkg-config \
+                       texinfo \
+                       gcc-14 \
+                       g++-14 \
+                       libgccjit-14-dev \
+                       libsqlite3-dev\
+                       libtree-sitter-dev \
+                       libwebkit2gtk-4.1-dev" \
+    EMACS_BUILD_DEPS="libgccjit0 \
+                      libjansson4 \
+                      libm17n-0 \
+                      libgif7 \
+                      libotf1 \
+                      libsqlite3-0 \
+                      libtree-sitter0.22 \
+                      libwebkit2gtk-4.1-0"
+
+# Install Packages
+#
+## Prevent errors in newest debian versions
+#RUN apt-get install dialog apt-utils -y --no-install-recommends
+
+RUN apt-get install \
+    curl \
+    sudo \
+    gh \
+    git \
+    git-delta \
+    ripgrep \
+    openssh-client \
+    python3 python3-dev python3-pip python3-setuptools python3-venv \
+    python3-paramiko python3-pyinotify python3-xdg python3-rencode \
+    ncurses-term \
+    libtool \
+    libtool-bin \
+    chromium libnspr4 libnss3 \
+    xclip \
+    jq \
+    unzip \
+    sqlite3 \
+    bind9-dnsutils \
+    iputils-ping \
+    libclang-dev \
+    $EMACS_BUILD_TOOLS \
+    $EMACS_BUILD_DEPS \
+    -y --no-install-recommends
+
+ENV CXX=/usr/bin/g++-14 \
+    CXXFLAGS="-O3 -fomit-frame-pointer" \
+    CC=/usr/bin/gcc-14 \
+    CFLAGS="-O3 -fomit-frame-pointer"
+
+# Install Python
+#
+RUN update-alternatives --install /usr/bin/python python /usr/bin/python3 1 && \
+    update-alternatives --install /usr/bin/pip pip /usr/bin/pip3 1
+
+
+# Setup User
+#
+#COPY conf/bashrc /home/$USER/.bashrc
+#COPY conf/bash_profile /home/$USER/.bash_profile
+#COPY conf/JetBrainsMono.ttf /usr/local/share/fonts/
+#COPY conf/emacs /home/$USER/.emacs
+
+RUN useradd -u $UID -s /bin/bash $USER && \
+    adduser $USER sudo && \
+    echo '%sudo ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers && \
+    #
+    mkdir -p /home/$USER/ && \
+    touch /home/$USER/.sudo_as_admin_successful && \
+    touch /home/$USER/.hushlogin && \
+    #
+    mkdir /opt/emacsd && \
+#    mkdir /run/user/$UID && \
+#    chown -R $USER:$USER /run/user/$UID && \
+#    mkdir /home/$USER/.emacs.d && \
+    chown -R $USER:$USER /opt/emacsd && \
+    chown -R $USER:$USER /home/$USER
+#    mkdir /storage && \
+#    chown -R $USER:$USER /storage
+
+
+# Build Emacs
+#
+ARG EMACS_VERSION=31.1
+ARG EMACS_SHA256=1da5790d9580c81932b5bf700633114468da7b3412d69faa767daebf974f4586
+RUN mk-build-deps emacs \
+    --install \
+    --remove \
+    --tool='apt-get -o Debug::pkgProblemResolver=yes --no-install-recommends --yes' && \
+    mkdir -p /opt/emacsd/src && \
+    wget -4 -qO /tmp/emacs.tar.xz "https://ftp.gnu.org/gnu/emacs/emacs-${EMACS_VERSION}.tar.xz" && \
+    echo "${EMACS_SHA256}  /tmp/emacs.tar.xz" | sha256sum -c - && \
+    tar -xJf /tmp/emacs.tar.xz --strip-components=1 -C /opt/emacsd/src && \
+    rm /tmp/emacs.tar.xz && \
+    cd /opt/emacsd/src && \
+    ./configure \
+    --with-tree-sitter \
+    --without-sound \
+    --with-zlib \
+    --with-native-compilation \
+    --with-modules \
+    --with-json \
+    --with-mailutils \
+    --with-xml2 \
+    --with-sqlite3=yes \
+    --with-xft \
+    --with-libotf \
+    --with-gnutls=yes \
+    --with-x=yes \
+    --with-cairo \
+    --with-x-toolkit=gtk3 \
+    --with-xwidgets \
+    --with-harfbuzz \
+    --with-jpeg=yes \
+    --with-png=yes && \
+    make -j$(nproc) && \
+    make install && \
+    /usr/local/bin/emacs --batch --quick \
+      --eval '(unless (featurep (quote xwidget-internal)) (error "Emacs was built without xwidget support"))' && \
+    cd /opt/emacsd/ && \
+    rm -rf src
+
+
+# RUN apt-get purge $EMACS_BUILD_TOOLS -y && \
+#     apt-mark manual $EMACS_BUILD_DEPS && \
+#     apt-get autoremove -y && \
+#     apt-get clean && \
+#     apt-get autoclean && \
+#     rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* && \
+#     rm -f /*emacs-build-deps*
+
+# Development tools
+
+# Install Rust for the correct CPU architecture
+ARG RUST_VERSION=1.98.0
+ARG RUSTUP_INIT_VERSION=1.29.0
+ENV RUSTUP_HOME=/usr/local/rustup \
+    CARGO_HOME=/usr/local/cargo \
+    PATH=/usr/local/cargo/bin:$PATH
+RUN arch="$(uname -m)" && \
+    case "$arch" in \
+    x86_64) rustArch='x86_64-unknown-linux-gnu'; rustupSha256='4acc9acc76d5079515b46346a485974457b5a79893cfb01112423c89aeb5aa10' ;; \
+#    x86_64) rustArch='x86_64-unknown-linux-gnu'; rustupSha256='6aeece6993e902708983b209d04c0d1dbb14ebb405ddb87def578d41f920f56d' ;; \
+#    aarch64) rustArch='aarch64-unknown-linux-gnu'; rustupSha256='673e336c81c65e6b16dcdede33f4cc9ed0f08bde1dbe7a935f113605292dc800' ;; \
+    *) echo >&2 "unsupported architecture: ${dpkgArch}"; exit 1 ;; \
+    esac && \
+    wget -qO /tmp/rustup-init "https://static.rust-lang.org/rustup/archive/${RUSTUP_INIT_VERSION}/${rustArch}/rustup-init" && \
+    echo "${rustupSha256}  /tmp/rustup-init" | sha256sum -c - && \
+    chmod +x /tmp/rustup-init && \
+    /tmp/rustup-init -y --no-modify-path --profile minimal --default-toolchain ${RUST_VERSION} --default-host ${rustArch} && \
+    rm /tmp/rustup-init && \
+    chmod -R a+w ${RUSTUP_HOME} ${CARGO_HOME}
+
+# Install Rust tooling
+RUN rustup component add clippy rustfmt
+RUN rustup component add rust-analyzer
+# RUN cargo install cargo-binstall
+
+# Adding Rust to the PATH for all users
+RUN echo "export PATH=/usr/local/cargo/bin:\$PATH" >> /etc/profile
+RUN echo "export CARGO_HOME=\$HOME/.cargo" >> /etc/profile
+
+# Install npm as it's useful for installing other lsp services
+RUN apt-get install \
+    npm \
+    -y --no-install-recommends
+
+# Add the prefix to the user as well
+USER $USER
+RUN mkdir ~/.npm-global
+RUN npm config set prefix '/home/core/.npm-global'
+USER root
+RUN npm config set prefix '/home/core/.npm-global'
+RUN echo "export PATH=~/.npm-global/bin:\$PATH" >> /etc/profile
+ENV PATH=/home/core/.npm-global/bin:$PATH
+
+# Speech dependencies (Whisper and Kokoro)
+RUN apt install -y \
+    cmake \
+    pipewire \
+    ffmpeg \
+    libvulkan-dev \
+    mesa-vulkan-drivers \
+    glslc \
+    spirv-headers \
+    glslang-tools \
+    vulkan-tools \
+    libespeak-ng-dev \
+    espeak-ng \
+    espeak-ng-data \
+    pulseaudio-utils
+
+# Adding whisper.cpp
+RUN git clone https://github.com/ggerganov/whisper.cpp.git /tmp/whisper.cpp && \
+    cmake -S /tmp/whisper.cpp -B /tmp/whisper.cpp/build \
+      -DGGML_VULKAN=ON \
+      -DCMAKE_BUILD_TYPE=Release && \
+    cmake --build /tmp/whisper.cpp/build --config Release -j"$(nproc)"
+
+# RUN cd /tmp/whisper.cpp && sh ./models/download-ggml-model.sh medium
+RUN cd /tmp/whisper.cpp && sh ./models/download-ggml-model.sh small
+RUN cd /tmp/whisper.cpp && sh ./models/download-ggml-model.sh large-v3-q5_0
+RUN cd /tmp/whisper.cpp && sh ./models/download-vad-model.sh silero-v6.2.0
+# RUN cd /tmp/whisper.cpp && sh ./models/download-ggml-model.sh base
+
+# Adding Kokoro (Vulkan shared library and English voice)
+ARG KOKORO_REV=a9e31430838c8bdc3d4beaaab62753681b9f7839
+RUN git clone --no-checkout https://github.com/simonfxr/kokoro.cpp.git /opt/kokoro.cpp && \
+    git -C /opt/kokoro.cpp checkout --detach "${KOKORO_REV}" && \
+    git -C /opt/kokoro.cpp submodule update --init --recursive --depth 1 && \
+    cmake -S /opt/kokoro.cpp -B /opt/kokoro.cpp/build \
+      -DKOKORO_VULKAN=ON \
+      -DKOKORO_STATIC=OFF \
+      -DKOKORO_BUILD_TESTS=OFF \
+      -DCMAKE_BUILD_TYPE=Release && \
+    cmake --build /opt/kokoro.cpp/build --config Release -j"$(nproc)" && \
+    ln -s "/usr/lib/$(dpkg-architecture -qDEB_HOST_MULTIARCH)/espeak-ng-data" \
+      /opt/kokoro.cpp/espeak-ng-data
+
+ARG KOKORO_MODELS_REV=c64650d0950e0b718b6eeb2f18620e25daf5c90b
+RUN cd /opt/kokoro.cpp/models && \
+    curl -fL --retry 3 -o kokoro-82m-f16.gguf \
+      "https://huggingface.co/simonfxr/kokoro.cpp-GGUF/resolve/${KOKORO_MODELS_REV}/kokoro-82m-f16.gguf" && \
+    curl -fL --retry 3 -o kokoro-voice-af_heart.gguf \
+      "https://huggingface.co/simonfxr/kokoro.cpp-GGUF/resolve/${KOKORO_MODELS_REV}/voices/kokoro-voice-af_heart.gguf" && \
+    echo '597926de84f5550e1526ce0abde4e496209d464afc9274d8603d14f3c04d1f67  kokoro-82m-f16.gguf' | sha256sum -c - && \
+    echo 'c2f44076dfb8f9c098a85d634f6d6b46b038f80e3afdf695ff3b90f6d9ef473f  kokoro-voice-af_heart.gguf' | sha256sum -c -
+
+ENV KOKORO_ESPEAK_DATA_PATH=/opt/kokoro.cpp
+
+# Download solc and make it executable
+RUN apt-get update && apt-get install -y wget && \
+    wget -O /usr/local/bin/solc https://github.com/ethereum/solc-bin/raw/gh-pages/linux-amd64/solc-linux-amd64-v0.8.27%2Bcommit.40a35a09 && \
+    chmod +x /usr/local/bin/solc
+
+# Install Go and its tooling
+RUN apt install -y -t trixie-backports golang
+ENV GOBIN=/home/$USER/.gobin
+
+USER $USER
+RUN go install golang.org/x/tools/gopls@v0.23.0 && \
+    go install github.com/chrishrb/go-grip@v0.10.0 && \
+    go install github.com/securego/gosec/v2/cmd/gosec@latest
+RUN curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/main/install.sh | sh -s -- -b "$GOBIN" v2.13.2
+USER root
+RUN echo "export PATH=\$GOBIN:\$PATH" >> /etc/profile
+
+# Adding emacs' lsp-booster
+RUN git clone https://github.com/blahgeek/emacs-lsp-booster.git /tmp/emacs-lsp-booster && \
+    cd /tmp/emacs-lsp-booster && cargo build --release && \
+    cp /tmp/emacs-lsp-booster/target/release/emacs-lsp-booster /usr/bin/
+
+# Preparing to install and use uv from there
+RUN echo "export PATH=/home/$USER/.local/bin:\$PATH" >> /etc/profile
+ENV PATH=/home/$USER/.local/bin:$PATH
+
+# Install Bun in .local
+ENV BUN_INSTALL=/home/$USER/.local
+
+#RUN apt install -y pipx && pipx install --global uv
+# This installs from the git which takes forever
+# RUN cargo install --git https://github.com/astral-sh/uv uv
+USER $USER
+
+# Installing uv to manage environments
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh
+# Install BU?N
+RUN curl -fsSL https://bun.sh/install | bash
+
+# USER root
+
+# Adding typescript
+# RUN mkdir /usr/local/lib/node_modules/ && chmod -R 775 /usr/local/lib/node_modules/ && npm install -g typescript && npm install -g yarn
+RUN npm install -g typescript && npm install -g yarn
+
+# Adding other JS/TS utils
+RUN npm install -g prettier
+
+# USER $USER
+# Add aider with a specific installation path
+RUN uv tool install --force --python python3.12 aider-chat[playwright]@latest
+# RUN uvx python@3.12 -m ensurepip
+# RUN uvx python@3.12 -m pip install --upgrade pip
+# RUN uvx python@3.12 -m pip install --upgrade aider-chat[playwright]
+# RUN uvx python@3.12 -m playwright install --with-deps chromium
+
+# Foundry
+#RUN curl -L https://foundry.paradigm.xyz | bash
+#RUN foundryup
+
+# Add Goose (aider-like)
+#USER root
+#RUN curl -fsSL https://github.com/block/goose/releases/download/stable/download_cli.sh | CONFIGURE=false bash
+#RUN cargo install --git https://github.com/block/goose.git goose-cli goose-llm goose-server mcp-server
+#USER $USER
+
+
+# Claude code with the router
+# RUN npm install -g @anthropic-ai/claude-code
+# RUN npm install -g @musistudio/claude-code-router
+# RUN echo "#!/bin/bash\nccr code \"\$@\"" > /usr/local/bin/ccr-wrapper && chmod +x /usr/local/bin/ccr-wrapper
+
+# Codex
+RUN npm i -g @openai/codex
+# RUN npm i -g git+https://github.com/snf/codex-multi-auth --force
+
+# Oh-my-pi
+RUN bun install -g @oh-my-pi/pi-coding-agent
+
+# Opencode
+# RUN npm i -g opencode-ai@latest
+
+# MCP Servers
+## Google Search
+# RUN git clone https://github.com/mixelpixx/Google-Search-MCP-Server.git /opt/google-search-mcp && \
+#     cd /opt/google-search-mcp && \
+#     yarn install && \
+#     yarn build
+
+# RUN git clone https://github.com/liamwh/docs-rs-mcp-server.git /opt/docs-rs-mcp && \
+#     cd /opt/docs-rs-mcp/docs-rs-mcp && \
+#     cargo build --release
+
+# Run
+#
+
+USER root
+
+RUN echo nameserver 1.1.1.1 >> /etc/resolv.conf
+
+#COPY conf/bashrc /root/.bashrc
+#COPY conf/background.png /usr/share/backgrounds/images/default.png
+
+ENV CARGO_HOME=/home/$USER/.cargo
+ENV USER="core"
+USER $USER
+WORKDIR /storage
+
+CMD ["emacs"]
