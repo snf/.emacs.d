@@ -351,8 +351,12 @@ was added, without restarting their live TUI connections."
              (or (not (zerop (process-exit-status process)))
                  (null (process-get process 'codex-proxy-endpoint))))
     (let ((message-text
-           (format "Codex TUI proxy exited with status %d"
-                   (process-exit-status process))))
+           (concat
+            (format "Codex TUI proxy exited with status %d"
+                    (process-exit-status process))
+            (when-let* ((buffer (process-get process 'codex-stderr-buffer))
+                        (name (buffer-name buffer)))
+              (format "; inspect %s" name)))))
       (if-let ((callback (process-get process 'codex-error-callback)))
           (funcall callback message-text)
         (message "%s" message-text)))))
@@ -363,16 +367,19 @@ was added, without restarting their live TUI connections."
 
 Call READY-CALLBACK with the proxy process and its WebSocket endpoint.  Call
 ERROR-CALLBACK if the proxy exits before or during use."
-  (let ((process
-         (make-process
-          :name (generate-new-buffer-name "codex-tui-proxy")
-          :command (append codex-app-server-python-command
-                           (list codex-app-server-proxy-script
-                                 "--endpoint" codex-app-server-endpoint))
-          :connection-type 'pipe
-          :noquery t
-          :filter #'codex-app-server--proxy-filter
-          :sentinel #'codex-app-server--proxy-sentinel)))
+  (let* ((stderr-buffer (generate-new-buffer " *codex-tui-proxy-stderr*"))
+         (process
+          (make-process
+           :name (generate-new-buffer-name "codex-tui-proxy")
+           :command (append codex-app-server-python-command
+                            (list codex-app-server-proxy-script
+                                  "--endpoint" codex-app-server-endpoint))
+           :connection-type 'pipe
+           :noquery t
+           :stderr stderr-buffer
+           :filter #'codex-app-server--proxy-filter
+           :sentinel #'codex-app-server--proxy-sentinel)))
+    (process-put process 'codex-stderr-buffer stderr-buffer)
     (process-put process 'codex-ready-callback ready-callback)
     (process-put process 'codex-error-callback error-callback)
     process))

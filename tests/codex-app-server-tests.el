@@ -141,6 +141,38 @@
       (when (process-live-p process)
         (delete-process process)))))
 
+(ert-deftest codex-app-server-proxy-keeps-stderr-out-of-events-and-reports-log ()
+  (let* ((codex-app-server-python-command
+          '("sh" "-c"
+            "printf '%s\\n' 'dependency failed' >&2; printf '%s\\n' '{\"type\":\"ready\",\"endpoint\":\"ws://127.0.0.1:1\"}'; exit 7"
+            "proxy-test"))
+         ready failure invalid-data
+         (deadline (+ (float-time) 5))
+         process stderr-buffer)
+    (unwind-protect
+        (cl-letf (((symbol-function 'message)
+                   (lambda (format-string &rest _args)
+                     (when (string-match-p "invalid data" format-string)
+                       (setq invalid-data t)))))
+          (setq process
+                (codex-app-server-start-proxy
+                 (lambda (_process endpoint) (setq ready endpoint))
+                 (lambda (error-message) (setq failure error-message)))
+                stderr-buffer (process-get process 'codex-stderr-buffer))
+          (while (and (< (float-time) deadline)
+                      (or (not failure)
+                          (process-live-p (get-buffer-process stderr-buffer))))
+            (accept-process-output nil 0.05))
+          (should (equal ready "ws://127.0.0.1:1"))
+          (should-not invalid-data)
+          (should (string-match-p "exited with status 7" failure))
+          (should (string-match-p (regexp-quote (buffer-name stderr-buffer))
+                                  failure))
+          (with-current-buffer stderr-buffer
+            (should (string-match-p "dependency failed" (buffer-string)))))
+      (when process (codex-app-server-stop-proxy process))
+      (when (buffer-live-p stderr-buffer) (kill-buffer stderr-buffer)))))
+
 (ert-deftest codex-app-server-legacy-proxy-ignores-title-thread-and-attention ()
   (let ((process (start-process "codex-legacy-proxy-test" nil "cat"))
         checks thread attention)
