@@ -1145,11 +1145,10 @@ results."
   :ensure nil
   :if (featurep 'xwidget-internal)
   :init
-  ;; These keys must take precedence over minor-mode C-c prefix maps.
+  ;; Copy WebKit's selection with M-w; keep C-c available for prefix keys.
   (defvar-local my/xwidget-webkit-copy-keys nil)
   (defvar my/xwidget-webkit-copy-keys-map
     (let ((map (make-sparse-keymap)))
-      (define-key map (kbd "C-c") #'xwidget-webkit-copy-selection-as-kill)
       (define-key map (kbd "M-w") #'xwidget-webkit-copy-selection-as-kill)
       map))
   (defvar my/xwidget-webkit-copy-keys-alist
@@ -1157,7 +1156,7 @@ results."
   (add-to-list 'emulation-mode-map-alists 'my/xwidget-webkit-copy-keys-alist)
 
   (defun my/xwidget-webkit-enable-copy-keys ()
-    "Use WebKit's selection for copy keys in this buffer."
+    "Use WebKit's selection for M-w in this buffer."
     (setq-local my/xwidget-webkit-copy-keys t))
 
   (defun my/xwidget-webkit-open-buffer ()
