@@ -40,11 +40,16 @@ class FakeRPC:
         self.calls = []
         self.active = active
         self.fail = fail
+        self.history = []
+        self.history_error = None
     async def request(self, method, params, **kwargs):
         self.calls.append((method, params))
         if method == 'thread/read':
-            return {'thread': {'status': {'type': 'active' if self.active else 'idle'},
+            return {'thread': {'id': 'PINNED', 'status': {'type': 'active' if self.active else 'idle'},
                                'turns': [{'id': 'working-turn', 'status': 'inProgress'}] if self.active else []}}
+        if method == 'thread/turns/list':
+            if self.history_error: raise self.history_error
+            return {'data': self.history[:params.get('limit', 2)]}
         if method in ('turn/start', 'turn/steer'):
             await asyncio.sleep(.01)
             if self.fail: raise TimeoutError('Connection dropped after send')
@@ -155,7 +160,8 @@ class ControllerTests(unittest.IsolatedAsyncioTestCase):
     def tool(self, call='call', name='submit_to_working_codex', arguments=None):
         return dict(id=call, method='item/tool/call', params=dict(
             threadId='CHATTY', turnId='discussion', callId=call, tool=name,
-            arguments=arguments or {'instruction': 'Do the explicitly requested task.'}))
+            arguments=arguments if arguments is not None else
+            ({'instruction': 'Do the explicitly requested task.'} if name=='submit_to_working_codex' else {})))
 
     async def test_read_does_not_submit(self):
         (Path(self.temp.name)/'read.txt').write_text('Only inspect this')
@@ -177,6 +183,7 @@ class ControllerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([p for m,p in c.rpc.calls if m=='turn/start'][-1]['input'][0]['text'],'Otra pregunta.')
 
     async def test_idle_handoff_has_fixed_target_and_no_permission_overrides(self):
+        await self.controller.read_working_context(7)
         result = await self.controller.handoff({'instruction': 'Implement it.', 'threadId': 'ATTACK'}, 7)
         self.assertEqual(result['status'], 'accepted')
         payload = next(p for m,p in self.controller.rpc.calls if m=='turn/start')
@@ -186,18 +193,21 @@ class ControllerTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_busy_handoff_steers_expected_turn(self):
         self.controller.rpc.active = True
+        await self.controller.read_working_context(7)
         result = await self.controller.handoff({'instruction': 'Keep the current API.'}, 7)
         self.assertEqual(result['mode'], 'steered')
         payload = next(p for m,p in self.controller.rpc.calls if m=='turn/steer')
         self.assertEqual(payload['expectedTurnId'], 'working-turn')
 
     async def test_duplicate_and_concurrent_calls_send_once(self):
+        await self.controller.read_working_context(7)
         await asyncio.gather(self.controller._server_request(self.tool('a')),
                              self.controller._server_request(self.tool('a')),
                              self.controller._server_request(self.tool('b')))
         self.assertEqual(sum(m=='turn/start' for m,p in self.controller.rpc.calls), 1)
 
     async def test_unknown_delivery_is_never_automatically_resent(self):
+        await self.controller.read_working_context(7)
         self.controller.rpc.fail = True
         first = await self.controller.handoff({'instruction': 'A task'}, 7)
         again = await self.controller.handoff({'instruction': 'A task'}, 7)
@@ -209,6 +219,7 @@ class ControllerTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_waiting_handoff_can_be_cancelled_without_delivery(self):
         self.controller.rpc.active = True
+        await self.controller.read_working_context(7)
         task = asyncio.create_task(self.controller.handoff({'instruction':'Next task','delivery':'after_current'},7))
         await asyncio.sleep(.02)
         self.controller.epoch += 1
@@ -217,6 +228,7 @@ class ControllerTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(any(m.startswith('turn/') for m,p in self.controller.rpc.calls))
 
     async def test_closing_during_delivery_persists_unknown_receipt(self):
+        await self.controller.read_working_context(7)
         task = asyncio.create_task(self.controller.handoff({'instruction':'Explicit task'},7))
         while not self.controller.submitting: await asyncio.sleep(0)
         task.cancel()
@@ -226,6 +238,7 @@ class ControllerTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(self.controller.accepted)
 
     async def test_acknowledgement_closes_only_after_player_drain(self):
+        await self.controller.read_working_context(7)
         self.controller.speech.drain.clear()
         await self.controller.handoff({'instruction':'A task'},7)
         await asyncio.sleep(.08)
@@ -243,6 +256,68 @@ class ControllerTests(unittest.IsolatedAsyncioTestCase):
         result = await self.controller._server_request(wrong)
         self.assertFalse(result['success'])
         self.assertEqual(self.controller.rpc.calls, [])
+
+    async def test_handoff_requires_refresh_in_the_current_discussion_turn(self):
+        c=self.controller
+        result=await c.handoff({'instruction':'A task'},7)
+        self.assertIn('read_working_context',result['error'])
+        self.assertEqual(c.rpc.calls,[])
+        await c.read_working_context(7)
+        c.epoch=8
+        result=await c.handoff({'instruction':'Another task'},8)
+        self.assertIn('read_working_context',result['error'])
+        self.assertFalse(any(method.startswith('turn/') for method,params in c.rpc.calls))
+
+    async def test_refresh_returns_only_bounded_recent_user_and_assistant_text(self):
+        c=self.controller
+        def user(text):return dict(type='userMessage',content=[dict(type='text',text=text)])
+        c.rpc.history=[
+            dict(id='current',status='inProgress',items=[user('Current request'),user('Additional constraint'),
+                 dict(type='reasoning',text='PRIVATE REASONING'),dict(type='commandExecution',aggregatedOutput='PRIVATE TOOL OUTPUT'),
+                 dict(type='agentMessage',text='Progress '+('x'*20000)+' end',phase='commentary')]),
+            dict(id='previous',status='completed',items=[user('Previous request'),dict(type='agentMessage',text='Previous answer')]),
+            dict(id='old',status='completed',items=[user('OLDER HISTORY')])]
+        result=await c._server_request(self.tool(name='read_working_context'))
+        self.assertTrue(result['success'])
+        snapshot=json.loads(result['contentItems'][0]['text'])
+        self.assertEqual(snapshot['thread_id'],'PINNED')
+        self.assertEqual([t['turn_id'] for t in snapshot['turns']],['previous','current'])
+        current=snapshot['turns'][-1]
+        self.assertEqual(current['user_message'],'Current request\n\nAdditional constraint')
+        self.assertEqual(current['assistant_phase'],'commentary')
+        self.assertLessEqual(len(current['assistant_message']),16384)
+        self.assertTrue(current['assistant_message'].endswith(' end'))
+        for private in ('PRIVATE REASONING','PRIVATE TOOL OUTPUT','OLDER HISTORY'):
+            self.assertNotIn(private,json.dumps(snapshot))
+        self.assertTrue(all(params['threadId']=='PINNED' for method,params in c.rpc.calls))
+        self.assertFalse(any(method in ('thread/resume','turn/start','turn/steer') for method,params in c.rpc.calls))
+
+    async def test_failed_refresh_invalidates_prior_context_and_never_submits(self):
+        c=self.controller
+        await c.read_working_context(7)
+        c.rpc.history_error=RPCError('History could not be read')
+        with self.assertRaises(RPCError):await c.read_working_context(7)
+        result=await c.handoff({'instruction':'A task'},7)
+        self.assertIn('read_working_context',result['error'])
+        self.assertFalse(any(method.startswith('turn/') for method,params in c.rpc.calls))
+
+    async def test_refresh_of_new_empty_thread_does_not_resume_it(self):
+        c=self.controller
+        c.rpc.history_error=RPCError('thread PINNED is not materialized yet; unavailable before first user message')
+        snapshot=await c.read_working_context(7)
+        self.assertEqual(snapshot['turns'],[])
+        self.assertEqual(c.handoff_context_epoch,7)
+        self.assertFalse(any(method=='thread/resume' for method,params in c.rpc.calls))
+
+    async def test_refresh_cancelled_during_read_does_not_authorize_handoff(self):
+        c=self.controller
+        request=c.rpc.request
+        async def interrupted(method,params,**kwargs):
+            if method=='thread/turns/list':c.epoch+=1
+            return await request(method,params,**kwargs)
+        c.rpc.request=interrupted
+        with self.assertRaises(ValueError):await c.read_working_context(7)
+        self.assertIsNone(c.handoff_context_epoch)
 
     async def test_agent_deltas_and_completed_item_are_spoken_once(self):
         c = self.controller

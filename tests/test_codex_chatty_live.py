@@ -101,6 +101,19 @@ class LiveTests(unittest.IsolatedAsyncioTestCase):
         await until(lambda:any(e in ('idle','closed') for e,k in self.events[start:]))
         return self.events[start:]
 
+    async def working_turn(self,text):
+        response=await self.admin.request('turn/start',{'threadId':self.target,'input':[{'type':'text','text':text}]})
+        identity=response['turn']['id']
+        deadline=time.monotonic()+90
+        while time.monotonic()<deadline:
+            result=await self.admin.request('thread/turns/list',{'threadId':self.target,'limit':2,'itemsView':'summary'})
+            completed=next((t for t in result['data'] if t['id']==identity and t['status']!='inProgress'),None)
+            if completed:
+                self.assertEqual(completed['status'],'completed')
+                return completed
+            await asyncio.sleep(.1)
+        self.fail('Disposable working turn did not finish')
+
     async def asyncTearDown(self):
         self.release.set()
         for c in self.controllers:
@@ -140,6 +153,52 @@ class LiveTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(sum(e=='acknowledgement' for e,k in events),1)
         self.assertLess(next(i for i,(e,k) in enumerate(events) if e=='handoff'),
                         next(i for i,(e,k) in enumerate(events) if e=='closed'))
+        self.assertLess(next(i for i,(e,k) in enumerate(events) if e=='working-context'),
+                        next(i for i,(e,k) in enumerate(events) if e=='handoff'))
+
+    async def test_handoff_fits_updated_working_context_and_preserves_private_constraints(self):
+        await self.working_turn('This is a read-only scenario for a handoff test. The task is pagination. '
+                                'Reply exactly: Pagination implementation is pending.')
+        c=await self.make_controller(context={
+            'last_user_message':'Implement pagination.',
+            'last_assistant_message':'Pagination implementation is pending.'})
+        events=await self.turn(c,'No envíes nada todavía. Cuando avancemos, conservá intactos los nombres de las funciones '
+                                'públicas y agregá un test para una página vacía. Por cierto, hoy desayuné una tostada.')
+        self.assertFalse(any(e=='handoff' for e,k in events))
+        latest=await self.working_turn('Scenario update: pagination implementation is now complete. The next action is '
+                                       'review and tests, not implementing it again. Reply exactly: Implementation complete; review and tests pending.')
+        events=await self.turn(c,'Ahora decíle al Codex de trabajo que avance con lo que acordamos. No hace falta leerme el mensaje.')
+        receipts=[k for e,k in events if e=='handoff' and k['status']=='accepted']
+        self.assertEqual(len(receipts),1)
+        instruction=receipts[0]['instruction'].lower()
+        self.assertTrue('review' in instruction or 'inspect' in instruction,instruction)
+        self.assertIn('test',instruction)
+        self.assertTrue('empty' in instruction or 'zero' in instruction,instruction)
+        self.assertIn('public',instruction)
+        self.assertTrue(any(word in instruction for word in ('preserv','unchanged','keep','retain')),instruction)
+        self.assertNotIn('breakfast',instruction)
+        self.assertNotIn('toast',instruction)
+        refresh=next(k for e,k in events if e=='working-context')
+        self.assertIn(latest['id'],refresh['turn_ids'])
+        self.assertTrue(c.closed.is_set())
+
+    async def test_handoff_keeps_corrected_intent_without_private_clarification_dialogue(self):
+        c=await self.make_controller()
+        events=await self.turn(c,'Prepará un mensaje para que Codex revise y haga commit de los cambios de esta sesión. '
+                                'Usá el título Voice runtime fixes. No incluyas herramientas ni binarios. '
+                                'Otra frase suelta: lock and file. No lo envíes todavía.')
+        self.assertFalse(any(e=='handoff' for e,k in events))
+        events=await self.turn(c,'La expresión lock and file fue una mala transcripción. '
+                                'Descartá solamente esa expresión y enviále ahora el pedido al Codex de trabajo.')
+        receipts=[k for e,k in events if e=='handoff' and k['status']=='accepted']
+        self.assertEqual(len(receipts),1)
+        instruction=receipts[0]['instruction']
+        self.assertIn('Voice runtime fixes',instruction)
+        for substantive in ('commit','review','tool','binar'):
+            self.assertIn(substantive,instruction.lower())
+        for discarded in ('lock and file','lockfile','transcription','user clarified'):
+            self.assertNotIn(discarded,instruction.lower())
+        self.assertTrue(c.closed.is_set())
 
     async def test_busy_target_is_steered_with_real_turn_receipt(self):
         self.target=await self.new_target(hold=True)
@@ -147,6 +206,7 @@ class LiveTests(unittest.IsolatedAsyncioTestCase):
         await asyncio.wait_for(self.hold.wait(),90)
         c=await self.make_controller()
         c.epoch=1
+        await c.read_working_context(1)
         receipt=await c.handoff({'instruction':'After the wait, reply STEER_ACCEPTED without modifying files.'},1)
         self.assertEqual(receipt['mode'],'steered')
         self.assertEqual(receipt['status'],'accepted')
@@ -247,6 +307,7 @@ class LiveTests(unittest.IsolatedAsyncioTestCase):
         await self.admin.request('turn/start',{'threadId':self.target,'input':[{'type':'text','text':'Call wait_for_test_release once, then reply OK.'}]})
         await asyncio.wait_for(self.hold.wait(),90)
         c=await self.make_controller();c.epoch=1
+        await c.read_working_context(1)
         task=asyncio.create_task(c.handoff({'instruction':'Reply AFTER_CURRENT_ACCEPTED without modifying files.','delivery':'after_current'},1))
         await until(lambda:any(e=='status' and 'Waiting' in k.get('text','') for e,k in self.events))
         self.assertIsNone(c.accepted)

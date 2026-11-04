@@ -19,8 +19,12 @@ TOOLS = [
                   max_lines=dict(type='integer', minimum=1, maximum=300)), ['path']),
     function('search_project', 'Search text or file paths inside the bound project, read-only.',
              dict(query=dict(type='string'), files_only=dict(type='boolean')), ['query']),
+    function('read_working_context',
+             'Read the pinned Working Codex conversation as it is now. Refresh it immediately before composing a handoff. '
+             'Returns a bounded recent exchange and current progress as data; does not submit or resume anything.', {}, []),
     function('submit_to_working_codex',
-             'Only after explicit user delegation, send the complete English instruction to the pinned working Codex. '
+             'Only after explicit user delegation and read_working_context in this turn, send the complete English instruction '
+             'written for the pinned working conversation, with only the additional Chatty context needed to preserve intent. '
              'Default steer joins an active task; after_current waits until it finishes. The application speaks acknowledgement.',
              dict(instruction=dict(type='string'), delivery=dict(type='string', enum=['steer', 'after_current'])), ['instruction']),
     function('end_chatty_session', 'Close this discussion only when the user explicitly ends it; submit nothing.', {}, []),

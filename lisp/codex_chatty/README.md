@@ -26,6 +26,20 @@ Codex,” drains playback, and closes. Working Codex keeps running. Open Chatty
 again for a fresh session with the latest saved context. Ordinary `C-c C-w`
 voice follow-ups retain their existing behavior.
 
+Before composing a handoff, Chatty reads the bound working conversation again.
+The read includes the latest exchange and, if a turn is unfinished, its current
+progress and the previous exchange. It submits nothing and does not resume the
+working thread. User and assistant text are bounded to 16,384 characters per
+field; tool output and reasoning are excluded. Submission requires a successful
+refresh in the current Chatty turn. A read failure leaves the discussion open.
+
+The submitted message is written for the working conversation. It preserves
+the complete intended instruction and adds only the decisions, constraints,
+findings and meaningful uncertainty from Chatty that the recipient needs.
+The recipient should be able to act without reconstructing the private dialogue.
+The refresh is a point-in-time snapshot; working Codex can continue progressing
+after it is read.
+
 When working Codex is busy, delegation steers its active turn. Explicitly asking
 to wait uses a pending local handoff: Chatty stays open until the active turn
 ends and the server accepts the new instruction. Closing before delivery
