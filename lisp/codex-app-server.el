@@ -280,7 +280,7 @@ was added, without restarting their live TUI connections."
 (defun codex-app-server--proxy-bind-thread (process thread-id)
   (unless (equal thread-id (process-get process 'codex-thread-id))
     (process-put process 'codex-thread-id thread-id)
-    (when-let ((callback (process-get process 'codex-thread-callback)))
+    (when-let* ((callback (process-get process 'codex-thread-callback)))
       (funcall callback thread-id))))
 
 (defun codex-app-server--proxy-emit-thread (process thread-id)
@@ -301,7 +301,7 @@ was added, without restarting their live TUI connections."
 (defun codex-app-server--proxy-emit-attention (process thread-id turn-id)
   "Report a completed TURN-ID for this proxy's THREAD-ID."
   (when (equal thread-id (process-get process 'codex-thread-id))
-    (when-let ((callback (process-get process 'codex-attention-callback)))
+    (when-let* ((callback (process-get process 'codex-attention-callback)))
       (funcall callback thread-id turn-id))))
 
 (defun codex-app-server--proxy-handle-line (process line)
@@ -315,7 +315,7 @@ was added, without restarting their live TUI connections."
                         (eq t (plist-get message :filters_ephemeral)))
            (process-put process 'codex-proxy-endpoint
                         (plist-get message :endpoint))
-           (when-let ((callback (process-get process 'codex-ready-callback)))
+           (when-let* ((callback (process-get process 'codex-ready-callback)))
              (process-put process 'codex-ready-callback nil)
              (funcall callback process (plist-get message :endpoint))))
           ("thread"
@@ -328,7 +328,7 @@ was added, without restarting their live TUI connections."
             (plist-get message :turn_id)))
           ("error"
            (let ((error-message (plist-get message :message)))
-             (if-let ((callback
+             (if-let* ((callback
                        (process-get process 'codex-error-callback)))
                  (funcall callback error-message)
                (message "Codex TUI proxy: %s" error-message))))))
@@ -357,7 +357,7 @@ was added, without restarting their live TUI connections."
             (when-let* ((buffer (process-get process 'codex-stderr-buffer))
                         (name (buffer-name buffer)))
               (format "; inspect %s" name)))))
-      (if-let ((callback (process-get process 'codex-error-callback)))
+      (if-let* ((callback (process-get process 'codex-error-callback)))
           (funcall callback message-text)
         (message "%s" message-text)))))
 
@@ -388,7 +388,7 @@ ERROR-CALLBACK if the proxy exits before or during use."
 (defun codex-app-server-proxy-set-thread-callback (process callback)
   "Arrange for CALLBACK to receive PROCESS's Codex thread id."
   (process-put process 'codex-thread-callback callback)
-  (when-let ((thread-id (process-get process 'codex-thread-id)))
+  (when-let* ((thread-id (process-get process 'codex-thread-id)))
     (funcall callback thread-id)))
 
 ;;;###autoload

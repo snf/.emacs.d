@@ -299,10 +299,10 @@ When EXPECTED is non-nil, only release it if it is still the active capture."
     ;; idempotent and cannot observe half-released state.
     (when capture
       (setq codex-voice--capture nil))
-    (when-let ((timer (plist-get capture :timer)))
+    (when-let* ((timer (plist-get capture :timer)))
       (when (timerp timer)
         (cancel-timer timer)))
-    (when-let ((target (plist-get capture :target)))
+    (when-let* ((target (plist-get capture :target)))
       (when (buffer-live-p target)
         (with-current-buffer target
           (remove-hook 'kill-buffer-hook
@@ -313,7 +313,7 @@ When EXPECTED is non-nil, only release it if it is still the active capture."
   (let ((capture codex-voice--capture))
     (when (and capture (or (null expected) (eq expected capture)))
       (codex-voice--clear-capture capture)
-      (when-let ((process (plist-get capture :process)))
+      (when-let* ((process (plist-get capture :process)))
         (when (process-live-p process)
           (if (my/whisper-realtime--p process)
               (my/whisper-realtime--cancel process)

@@ -116,7 +116,7 @@
 
   (defun my/project-find-root (path)
     "Search up the PATH for `project-root-markers'."
-    (when-let ((root (locate-dominating-file path #'my/project-root-p)))
+    (when-let* ((root (locate-dominating-file path #'my/project-root-p)))
       ;; (cons 'transient (expand-file-name root)))) ;; don't expand filename to avoid saving duplicates
       (cons 'transient root)))
 
@@ -908,11 +908,11 @@ DIRECTORY, when non-nil, is used instead of discovering the current project."
   :bind ("C-x u" . vundo)
   )
 
-(use-package yasnippet
+(use-package yasnippet)
+(use-package yasnippet-snippets
   :config
   (yas-global-mode 1)
   )
-(use-package yasnippet-snippets)
 
 ;; langs
 (use-package treesit
@@ -976,6 +976,8 @@ DIRECTORY, when non-nil, is used instead of discovering the current project."
   (sp-local-pair 'org-mode "~" "~" :actions '(wrap))
   (sp-local-pair 'org-mode "=" "=" :actions '(wrap))
   :init
+  ;; Load the definition before Smartparens advises it.
+  (require 'hippie-exp)
   (smartparens-global-mode t)
   )
 
@@ -1037,7 +1039,7 @@ DIRECTORY, when non-nil, is used instead of discovering the current project."
              (not (functionp 'json-rpc-connection))  ;; native json-rpc
              (executable-find "emacs-lsp-booster"))
         (progn
-          (when-let ((command-from-exec-path (executable-find (car orig-result))))  ;; resolve command from exec-path (in case not found in $PATH)
+          (when-let* ((command-from-exec-path (executable-find (car orig-result))))  ;; resolve command from exec-path (in case not found in $PATH)
             (setcar orig-result command-from-exec-path))
           (message "Using emacs-lsp-booster for %s!" orig-result)
           (cons "emacs-lsp-booster" orig-result))
@@ -1309,7 +1311,7 @@ Buffers without a file, or narrowed buffers, use a temporary HTML file."
        xwidget markdown-github-preview--autoscroll-script)))
   (defun markdown-github-preview--webkit-callback (xwidget event)
     "Preserve XWIDGET's callback and re-install autoscroll after page loads."
-    (when-let ((original (xwidget-get xwidget
+    (when-let* ((original (xwidget-get xwidget
                                       'markdown-github-preview--callback)))
       (funcall original xwidget event))
     (when (and (eq event 'load-changed)
@@ -1318,7 +1320,7 @@ Buffers without a file, or narrowed buffers, use a temporary HTML file."
   (defun markdown-github-preview--enable-autoscroll (&optional session)
     "Enable middle-click scrolling for SESSION or the current WebKit preview."
     (require 'xwidget)
-    (when-let ((xwidget (or session (xwidget-webkit-current-session))))
+    (when-let* ((xwidget (or session (xwidget-webkit-current-session))))
       (unless (xwidget-get xwidget 'markdown-github-preview--callback)
         (xwidget-put xwidget 'markdown-github-preview--callback
                      (xwidget-get xwidget 'callback))
