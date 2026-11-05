@@ -443,6 +443,9 @@
 	 ;; (org-mode . my/cape-capf-setup-org)
 	 )
   :init
+  ;; Use Cape's text completions without requiring a system dictionary.
+  (setq text-mode-ispell-word-completion nil)
+
   ;; Use cape-super-capf to merge the completion at point
   ;; https://www.reddit.com/r/emacs/comments/zs0ie5/comment/j17vrgk/?utm_source=share&utm_medium=web2x&context=3
   (defun my/cape-capf-setup-lsp ()
@@ -481,8 +484,7 @@
   (add-to-list 'completion-at-point-functions #'cape-file)
   :bind (("C-c p d" . cape-dabbrev)
          ("C-c p f" . cape-file)
-         ("C-c p s" . cape-symbol)
-         ("C-c p i" . cape-ispell)))
+         ("C-c p s" . cape-symbol)))
 
 ;; utils
 (use-package exec-path-from-shell
