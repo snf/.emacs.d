@@ -130,10 +130,17 @@ def command(pid: int) -> list[str]:
 
 
 def children(pid: int) -> list[int]:
+    found: set[int] = set()
     try:
-        return [int(p) for p in Path(f"/proc/{pid}/task/{pid}/children").read_text().split()]
+        # Launchers such as uv can spawn the child from a worker thread.
+        for path in Path(f"/proc/{pid}/task").glob("*/children"):
+            try:
+                found.update(int(p) for p in path.read_text().split())
+            except OSError:
+                continue  # Threads may exit while their children are inspected.
     except OSError:
-        return []
+        pass
+    return sorted(found)
 
 
 def descendants(pid: int) -> list[int]:

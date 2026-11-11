@@ -2,6 +2,7 @@
 
 import importlib.util
 from pathlib import Path
+from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import MagicMock, patch
 
@@ -13,6 +14,17 @@ spec.loader.exec_module(restart)
 
 
 class RestartChecks(unittest.TestCase):
+    def test_children_include_processes_spawned_by_worker_threads(self):
+        with TemporaryDirectory() as directory:
+            proc = Path(directory)
+            for thread, children in ((80, ""), (83, "151\n")):
+                task = proc / "80" / "task" / str(thread)
+                task.mkdir(parents=True)
+                (task / "children").write_text(children)
+            with patch.object(restart, "Path", side_effect=lambda path:
+                              proc / Path(path).relative_to("/proc")):
+                self.assertEqual(restart.children(80), [151])
+
     def test_supervisor_shell_quoting_does_not_change_the_command(self):
         environment = (
             b"OTHER=value\0TAKOPI_STACK_CODEX_COMMAND="
